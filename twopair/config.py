@@ -55,6 +55,9 @@ class Config:
     chase_interval_seconds: float = 4.0   # wait per quote before re-pegging
     max_chases: int = 5                   # re-quotes before market fallback
     fill_poll_seconds: float = 0.5        # order-status polling cadence
+    deadman_seconds: int = 900            # exchange auto-cancels resting
+                                          # orders this long after the last
+                                          # heartbeat; 0 disables
 
     # System.
     db_path: str = "data/journal.sqlite"

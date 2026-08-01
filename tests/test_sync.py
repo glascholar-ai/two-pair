@@ -124,12 +124,15 @@ class TestStrategyAdoption:
 
 
 class _ViewClient:
-    """Stub for LiveExecutor.position_view tests."""
+    """Stub for LiveExecutor.position_view / order-hygiene tests."""
 
     def __init__(self, rows: List[dict], funding: float) -> None:
         self._rows = rows
         self._funding = funding
         self.income_calls: List[str] = []
+        self.cancel_all_calls: List[str] = []
+        self.countdown_calls: List[tuple] = []
+        self.fail_cancel = False
 
     def position_risk_all(self) -> List[dict]:
         return self._rows
@@ -137,6 +140,16 @@ class _ViewClient:
     def funding_income(self, symbol: str, start_ms: int) -> float:
         self.income_calls.append(symbol)
         return self._funding
+
+    def cancel_all_open(self, symbol: str) -> dict:
+        if self.fail_cancel:
+            raise ConnectionError("boom")
+        self.cancel_all_calls.append(symbol)
+        return {}
+
+    def countdown_cancel_all(self, symbol: str, countdown_ms: int) -> dict:
+        self.countdown_calls.append((symbol, countdown_ms))
+        return {}
 
 
 class TestPositionView:
@@ -162,3 +175,26 @@ class TestPositionView:
         v = ex.position_view(dt.datetime(2026, 8, 1, tzinfo=UTC))
         assert v is not None and v.pnl_pct == pytest.approx(0.0)
         assert client.income_calls == []
+
+
+class TestOrderHygiene:
+    def test_cancel_all_covers_both_legs(self) -> None:
+        client = _ViewClient([], 0.0)
+        ex = LiveExecutor(client, 1000.0, "KR", "US")  # type: ignore[arg-type]
+        ex.cancel_all_open_orders()
+        assert client.cancel_all_calls == ["KR", "US"]
+
+    def test_cancel_all_failure_reports_not_raises(self) -> None:
+        events: List[str] = []
+        client = _ViewClient([], 0.0)
+        client.fail_cancel = True
+        ex = LiveExecutor(client, 1000.0, "KR", "US",  # type: ignore[arg-type]
+                          on_event=events.append)
+        ex.cancel_all_open_orders()   # must not raise
+        assert len(events) == 2
+
+    def test_deadman_arms_both_legs_in_ms(self) -> None:
+        client = _ViewClient([], 0.0)
+        ex = LiveExecutor(client, 1000.0, "KR", "US")  # type: ignore[arg-type]
+        ex.arm_deadman(900)
+        assert client.countdown_calls == [("KR", 900000), ("US", 900000)]

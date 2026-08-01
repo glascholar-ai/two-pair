@@ -133,6 +133,21 @@ class BinanceClient:
             "symbol": symbol, "origClientOrderId": client_id,
         }, signed=True)
 
+    def cancel_all_open(self, symbol: str) -> dict:
+        """Cancels ALL open orders for a symbol."""
+        return self.request("DELETE", "/fapi/v1/allOpenOrders",
+                            {"symbol": symbol}, signed=True)
+
+    def countdown_cancel_all(self, symbol: str, countdown_ms: int) -> dict:
+        """Arms the exchange-side dead-man switch for a symbol.
+
+        The exchange cancels all open orders for the symbol when the
+        countdown expires; re-issuing the call resets the timer. 0 disarms.
+        """
+        return self.request("POST", "/fapi/v1/countdownCancelAll", {
+            "symbol": symbol, "countdownTime": str(countdown_ms),
+        }, signed=True)
+
     def book_ticker(self, symbol: str) -> tuple:
         """Returns (best_bid, best_ask) for a symbol."""
         data = self.request("GET", "/fapi/v1/ticker/bookTicker",
@@ -340,6 +355,26 @@ class LiveExecutor:
         if not orders:
             return PairExecution(True, [])
         return self._both(orders, "close")
+
+    def cancel_all_open_orders(self) -> None:
+        """Cancels every resting order on both legs (startup hygiene)."""
+        for symbol in (self._kr, self._us):
+            try:
+                self._client.cancel_all_open(symbol)
+            except Exception as err:  # noqa: BLE001 — best effort
+                self._on_event(f"cancel-all failed for {symbol}: {err}")
+
+    def arm_deadman(self, seconds: int) -> None:
+        """Refreshes the exchange-side auto-cancel countdown on both legs.
+
+        Call once per cycle; if the process dies, the exchange cancels any
+        resting orders after `seconds`. Failures are reported, not raised.
+        """
+        for symbol in (self._kr, self._us):
+            try:
+                self._client.countdown_cancel_all(symbol, seconds * 1000)
+            except Exception as err:  # noqa: BLE001 — best effort
+                self._on_event(f"deadman arm failed for {symbol}: {err}")
 
     def position_view(self,
                       entry_ts: Optional[dt.datetime]) -> PairView:

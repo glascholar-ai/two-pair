@@ -134,6 +134,9 @@ class LiveApp:
         self._last_fx = float(fx_col[-1])
         self._fx_ts = cast(dt.datetime, pair.index[-1])
         logger.info("warmup done: %d bars to %s", len(pair), self._prev_ts)
+        self._exec.cancel_all_open_orders()
+        self._journal.record_event(_utcnow(), "INFO",
+                                   "startup: cancelled all open orders")
         self._recover_from_journal()
 
     def _recover_from_journal(self) -> None:
@@ -183,6 +186,8 @@ class LiveApp:
         if bar is None:
             return
         self._sync_position(bar)
+        if self._cfg.deadman_seconds > 0:
+            self._exec.arm_deadman(self._cfg.deadman_seconds)
         sig = self._engine.update(bar)
         # MTM comes exclusively from the exchange sync (real-money truth,
         # funding included via income). Local deltas are always zero; if a
