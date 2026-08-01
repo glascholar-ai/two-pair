@@ -16,7 +16,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import time
-from typing import Optional
+from typing import Optional, cast
 
 import pandas as pd
 
@@ -70,12 +70,16 @@ class LiveApp:
         # Drop the final row: its bar may still be forming.
         pair = pair.iloc[:-1]
         self._refresh_funding(start_ms)
-        for ts, row in pair.iterrows():
-            sig = self._engine.update(Bar(ts=ts, kr=row["kr"], us=row["us"],
-                                          fx=row["fx"]))
+        kr_col = pair["kr"].to_numpy(dtype=float)
+        us_col = pair["us"].to_numpy(dtype=float)
+        fx_col = pair["fx"].to_numpy(dtype=float)
+        for i, raw_ts in enumerate(pair.index):
+            ts = cast(dt.datetime, raw_ts)
+            sig = self._engine.update(Bar(ts=ts, kr=kr_col[i], us=us_col[i],
+                                          fx=fx_col[i]))
             self._prev_ts, self._prev_lr = ts, sig.lr
-        self._last_fx = float(pair["fx"].iloc[-1])
-        self._fx_ts = pair.index[-1]
+        self._last_fx = float(fx_col[-1])
+        self._fx_ts = cast(dt.datetime, pair.index[-1])
         logger.info("warmup done: %d bars to %s", len(pair), self._prev_ts)
 
     def _refresh_funding(self, start_ms: int) -> None:
@@ -106,7 +110,6 @@ class LiveApp:
 
     def step(self) -> None:
         """Fetches the latest closed bar and advances the strategy."""
-        cfg = self._cfg
         bar = self._fetch_latest_bar()
         if bar is None:
             return
@@ -118,12 +121,12 @@ class LiveApp:
 
         dlr = 0.0
         funding_pct = 0.0
-        if self._strategy.position is not None and self._prev_lr is not None:
-            dlr = sig.lr - self._prev_lr
-            kr_f = datamod.funding_between(self._funding_kr, self._prev_ts,
-                                           bar.ts)
-            us_f = datamod.funding_between(self._funding_us, self._prev_ts,
-                                           bar.ts)
+        prev_ts, prev_lr = self._prev_ts, self._prev_lr
+        if (self._strategy.position is not None and prev_lr is not None
+                and prev_ts is not None):
+            dlr = sig.lr - prev_lr
+            kr_f = datamod.funding_between(self._funding_kr, prev_ts, bar.ts)
+            us_f = datamod.funding_between(self._funding_us, prev_ts, bar.ts)
             funding_pct = (-kr_f + us_f) * 100.0
         decision = self._strategy.on_bar(sig, dlr, funding_pct)
         self._journal.record_bar(sig, bar.kr, bar.us, bar.fx)
@@ -173,6 +176,8 @@ class LiveApp:
                                       fill.qty, fill.price, fill.order_id,
                                       "close")
         trade = decision.trade
+        if trade is None:  # unreachable on a CLOSE decision; keep types honest
+            return
         self._journal.record_trade(trade, self._cfg.mode)
         self._guard.record_trade_pnl(trade.exit_ts, trade.pnl_pct)
         status = "" if result.ok else f" (EXEC ERROR: {result.error})"
@@ -204,8 +209,8 @@ class LiveApp:
         try:
             fx = datamod.fetch_fx_yahoo()
             prev_fx = self._last_fx
-            self._last_fx = float(fx.iloc[-1])
-            self._fx_ts = fx.index[-1].to_pydatetime()
+            self._last_fx = float(fx.to_numpy(dtype=float)[-1])
+            self._fx_ts = cast(pd.Timestamp, fx.index[-1]).to_pydatetime()
             if prev_fx is not None:
                 gap = RiskGuard(cfg).fx_gap_alert(prev_fx, self._last_fx)
                 if gap is not None:

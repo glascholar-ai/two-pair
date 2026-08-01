@@ -40,17 +40,17 @@ class TestRollingStat:
         rng = np.random.default_rng(7)
         xs = rng.normal(size=500)
         stat = RollingStat(size=50, min_periods=20)
-        ref = pd.Series(xs)
-        ref_mean = ref.rolling(50, min_periods=20).mean()
-        ref_std = ref.rolling(50, min_periods=20).std()
+        ref = pd.Series(list(xs))
+        ref_mean = list(ref.rolling(50, min_periods=20).mean())
+        ref_std = list(ref.rolling(50, min_periods=20).std())
         for i, x in enumerate(xs):
             stat.push(x)
             mean, std = stat.mean(), stat.std()
             if i + 1 < 20:
                 assert mean is None and std is None
             else:
-                assert mean == pytest.approx(ref_mean.iloc[i], abs=1e-12)
-                assert std == pytest.approx(ref_std.iloc[i], abs=1e-12)
+                assert mean == pytest.approx(ref_mean[i], abs=1e-12)
+                assert std == pytest.approx(ref_std[i], abs=1e-12)
 
     def test_rejects_bad_sizes(self) -> None:
         with pytest.raises(ValueError):

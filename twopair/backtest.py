@@ -6,8 +6,9 @@ the parity reference: any change to the signal path shows up here first.
 from __future__ import annotations
 
 import dataclasses
+import datetime as dt
 import math
-from typing import List, Optional
+from typing import List, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -56,22 +57,25 @@ def run_backtest(pair: pd.DataFrame, funding_kr: pd.Series,
 
     equity: List[float] = []
     eq = 0.0
-    prev_ts = None
-    prev_lr: Optional[float] = None
-    for ts, row in pair.iterrows():
-        sig = engine.update(Bar(ts=ts, kr=row["kr"], us=row["us"],
-                                fx=row["fx"]))
+    prev: Optional[Tuple[dt.datetime, float]] = None
+    kr_col = pair["kr"].to_numpy(dtype=float)
+    us_col = pair["us"].to_numpy(dtype=float)
+    fx_col = pair["fx"].to_numpy(dtype=float)
+    for i, raw_ts in enumerate(pair.index):
+        ts = cast(dt.datetime, raw_ts)
+        sig = engine.update(Bar(ts=ts, kr=kr_col[i], us=us_col[i],
+                                fx=fx_col[i]))
         dlr = 0.0
         funding_pct = 0.0
-        if strat.position is not None and prev_lr is not None:
-            dlr = sig.lr - prev_lr
-            kr_f = funding_between(funding_kr, prev_ts, ts)
-            us_f = funding_between(funding_us, prev_ts, ts)
+        if strat.position is not None and prev is not None:
+            dlr = sig.lr - prev[1]
+            kr_f = funding_between(funding_kr, prev[0], ts)
+            us_f = funding_between(funding_us, prev[0], ts)
             funding_pct = (-kr_f + us_f) * 100.0
             eq += strat.position.side * (dlr * 100.0 + funding_pct)
         strat.on_bar(sig, dlr, funding_pct)
         equity.append(eq)
-        prev_ts, prev_lr = ts, sig.lr
+        prev = (ts, sig.lr)
 
     curve = pd.Series(equity, index=pair.index, name="equity_pct")
     return BacktestResult(trades=list(strat.trades), equity=curve,
@@ -82,7 +86,9 @@ def _metrics(curve: pd.Series) -> dict:
     """Summary metrics from a bar-level equity curve."""
     drawdown = curve - curve.cummax()
     daily = curve.resample("1D").last().dropna().diff().dropna()
-    n_days = (curve.index[-1] - curve.index[0]).total_seconds() / 86400.0
+    span = (pd.Timestamp(str(curve.index[-1]))
+            - pd.Timestamp(str(curve.index[0])))
+    n_days = span.total_seconds() / 86400.0
     total = float(curve.iloc[-1])
     ann = total / n_days * 365.0 if n_days > 0 else math.nan
     vol = float(daily.std())

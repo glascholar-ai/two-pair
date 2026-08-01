@@ -9,14 +9,12 @@ from __future__ import annotations
 
 import concurrent.futures
 import dataclasses
-import datetime as dt
 import hashlib
 import hmac
 import json
 import logging
 import math
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -221,7 +219,7 @@ class LiveExecutor(Executor):
     def __init__(self, client: BinanceClient, leg_notional_usdt: float,
                  kr_symbol: str, us_symbol: str,
                  policy: Optional[ChasePolicy] = None,
-                 on_event: Optional[Callable[[str], None]] = None) -> None:
+                 on_event: Optional[Callable[[str], object]] = None) -> None:
         self._client = client
         self._notional = leg_notional_usdt
         self._kr = kr_symbol

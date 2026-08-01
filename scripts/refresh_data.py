@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
+from typing import cast
 
 import pandas as pd
 
@@ -24,7 +25,10 @@ def main() -> None:
                         help="UTC start date for history")
     args = parser.parse_args()
     cfg = load_config()
-    start_ms = int(pd.Timestamp(args.start, tz="UTC").timestamp() * 1000)
+    raw = pd.Timestamp(args.start, tz="UTC")
+    if bool(pd.isna(cast(object, raw))):
+        raise SystemExit(f"invalid --start date: {args.start!r}")
+    start_ms = int(cast(pd.Timestamp, raw).timestamp() * 1000)
 
     kr = datamod.fetch_klines(cfg.kr_symbol, "5m", start_ms)
     us = datamod.fetch_klines(cfg.us_symbol, "5m", start_ms)

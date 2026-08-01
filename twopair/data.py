@@ -84,11 +84,13 @@ def fetch_funding(symbol: str, start_ms: int,
             break
         cur = batch[-1]["fundingTime"] + 1
         time.sleep(0.2)
-    idx = pd.to_datetime([r["fundingTime"] for r in rows],
-                         unit="ms", utc=True).round("min")
+    stamps = pd.Series(pd.to_datetime(
+        [int(r["fundingTime"]) for r in rows], unit="ms", utc=True))
+    idx = pd.DatetimeIndex(stamps.dt.round("min"))
     ser = pd.Series([float(r["fundingRate"]) for r in rows], index=idx,
                     name=symbol)
-    return ser[~ser.index.duplicated(keep="first")].sort_index()
+    ser = ser.loc[~idx.duplicated(keep="first")]
+    return ser.sort_index()
 
 
 def fetch_fx_yahoo() -> pd.Series:

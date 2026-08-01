@@ -66,6 +66,7 @@ class TestEntryExit:
         # |z| stays wide; cross the 24h boundary.
         d = strat.on_bar(sig(24 * 60, 2.6), 0, 0)
         assert d.action == Action.CLOSE
+        assert d.trade is not None
         assert d.trade.reason == CloseReason.TIMEOUT
 
     def test_no_reentry_same_bar_after_close(self) -> None:
@@ -86,6 +87,7 @@ class TestStopAndRearm:
         # ratio rips against us: lr +0.03 => mtm -3.0% <= -2.5 -> stop.
         d = strat.on_bar(sig(5, 3.5, lr=0.05), dlr=0.03, funding_long_ratio_pct=0.0)
         assert d.action == Action.CLOSE
+        assert d.trade is not None
         assert d.trade.reason == CloseReason.STOP
         # Still wide: re-entry must be suppressed until |z| < z_in.
         assert strat.on_bar(sig(10, 3.4, lr=0.05), 0, 0).action == Action.NONE

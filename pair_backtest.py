@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import pathlib
+from typing import cast
 
 import pandas as pd
 
@@ -44,7 +45,8 @@ def main() -> None:
         cfg = dataclasses.replace(cfg, mtm_stop_pct=args.mtm_stop)
 
     pair = datamod.load_pair_csv("data/skhx_pair_5m.csv")
-    start_ms = int(pair.index[0].timestamp() * 1000)
+    start_ms = int(cast(pd.Timestamp,
+                        pd.Timestamp(str(pair.index[0]))).timestamp() * 1000)
     funding_kr = _funding(cfg.kr_symbol, "data/funding_kr.csv", start_ms)
     funding_us = _funding(cfg.us_symbol, "data/funding_us.csv", start_ms)
 

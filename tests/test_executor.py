@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 
 import pytest
 
-from twopair.executor import (BinanceClient, ChasePolicy, LegFill,
+from twopair.executor import (BinanceClient, ChasePolicy,
                               LiveExecutor, PaperExecutor, round_step)
 
 FAST = ChasePolicy(style="bbo", chase_interval_seconds=0.01, max_chases=3,
