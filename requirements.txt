@@ -1,0 +1,7 @@
+# Runtime dependencies of the twopair trading system.
+# Python >= 3.9. Everything else (sqlite3, urllib, hmac, ...) is stdlib.
+numpy>=1.24,<3
+pandas>=2.0,<3
+
+# Development / testing.
+pytest>=8,<9
