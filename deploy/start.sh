@@ -39,4 +39,6 @@ fi
 
 echo "credentials loaded (key: ${BINANCE_API_KEY:0:4}...); starting loop"
 cd "$APP_DIR"
-exec python3 run_live.py "$@"
+PYTHON="$APP_DIR/venv/bin/python3"
+[[ -x "$PYTHON" ]] || PYTHON="python3"
+exec "$PYTHON" run_live.py "$@"

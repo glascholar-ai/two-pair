@@ -5,24 +5,20 @@
 "Allow full access to all Cloud APIs";全局 secret:
 `binance-t32-apikey`、`binance-t32-secret-key`,SA 已授 secretAccessor。
 
-## 安装步骤
+## 一键部署(本地执行)
 
 ```bash
-# 1. 代码与依赖
-sudo useradd -r -m -d /opt/twopair -s /usr/sbin/nologin twopair || true
-sudo git clone git@github.com:glascholar-ai/two-pair.git /opt/twopair
-cd /opt/twopair && sudo -u twopair python3 -m pip install --user -r requirements.txt
-
-# 2. 验证密钥链路(以 twopair 用户)
-sudo -u twopair deploy/start.sh --help   # 应打印 run_live 帮助后退出
-
-# 3. systemd
-sudo cp deploy/twopair.service /etc/systemd/system/
-#    如需 --testnet / --config,编辑 ExecStart 行追加参数
-sudo systemctl daemon-reload
-sudo systemctl enable --now twopair
-journalctl -u twopair -f
+deploy/deploy.sh                        # 测试门禁 -> rsync -> venv 依赖 -> systemd -> 重启
+SERVICE_ARGS="--testnet" deploy/deploy.sh   # 需要传给 run_live.py 的参数
 ```
+
+目标机 `instance-two-pair`(REMOTE 变量可覆盖),部署到 `/home/luna/trading`
+(DEST 可覆盖),以 luna 用户运行,依赖装在 venv(Debian 12 的 PEP 668 限制)。
+远程 `data/`(journal)永不被 rsync 触碰,部署不丢研究数据。
+
+首次部署后验证:`ssh instance-two-pair journalctl -u twopair -f`,
+应看到 credentials loaded / warmup / 循环启动。手动单测密钥链路:
+`ssh instance-two-pair /home/luna/trading/deploy/start.sh --help`。
 
 ## 说明
 
