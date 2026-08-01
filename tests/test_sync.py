@@ -252,3 +252,82 @@ class TestExchangeRecovery:
         client = _ViewClient(rows, 0.0, trades)
         ex = LiveExecutor(client, 1000.0, "KR", "US")  # type: ignore[arg-type]
         assert ex.estimate_entry_ts() is None
+
+
+class _CaptureNotifier:
+    """Notifier stand-in that records sent messages."""
+
+    def __init__(self) -> None:
+        self.sent: List[str] = []
+
+    def send(self, text: str) -> bool:
+        self.sent.append(text)
+        return True
+
+
+class TestDailyDigest:
+    def _app(self, hour: int):
+        import twopair.live as livemod
+        from twopair.journal import Journal
+        import tempfile, os
+        cfg = Config(digest_utc_hour=hour,
+                     db_path=os.path.join(tempfile.mkdtemp(), "j.sqlite"))
+        notifier = _CaptureNotifier()
+        app = livemod.LiveApp(cfg, None, Journal(cfg.db_path),  # type: ignore[arg-type]
+                              notifier)  # type: ignore[arg-type]
+        return app, notifier
+
+    def test_sends_once_per_day(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import twopair.live as livemod
+        app, notifier = self._app(hour=0)
+        fake_now = dt.datetime(2026, 8, 3, 1, 0, tzinfo=UTC)
+        monkeypatch.setattr(livemod, "_utcnow", lambda: fake_now)
+        app._maybe_send_digest()
+        app._maybe_send_digest()
+        assert len(notifier.sent) == 1
+        assert "digest 2026-08-03" in notifier.sent[0]
+        assert "FLAT" in notifier.sent[0]
+        # next day fires again
+        monkeypatch.setattr(livemod, "_utcnow",
+                            lambda: fake_now + dt.timedelta(days=1))
+        app._maybe_send_digest()
+        assert len(notifier.sent) == 2
+
+    def test_respects_hour_gate(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import twopair.live as livemod
+        app, notifier = self._app(hour=8)
+        monkeypatch.setattr(
+            livemod, "_utcnow",
+            lambda: dt.datetime(2026, 8, 3, 7, 55, tzinfo=UTC))
+        app._maybe_send_digest()
+        assert notifier.sent == []
+        monkeypatch.setattr(
+            livemod, "_utcnow",
+            lambda: dt.datetime(2026, 8, 3, 8, 5, tzinfo=UTC))
+        app._maybe_send_digest()
+        assert len(notifier.sent) == 1
+
+    def test_disabled_by_negative_hour(
+            self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import twopair.live as livemod
+        app, notifier = self._app(hour=-1)
+        monkeypatch.setattr(
+            livemod, "_utcnow",
+            lambda: dt.datetime(2026, 8, 3, 12, 0, tzinfo=UTC))
+        app._maybe_send_digest()
+        assert notifier.sent == []
+
+    def test_digest_includes_position_and_counters(
+            self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import twopair.live as livemod
+        app, notifier = self._app(hour=0)
+        fake_now = dt.datetime(2026, 8, 3, 2, 0, tzinfo=UTC)
+        monkeypatch.setattr(livemod, "_utcnow", lambda: fake_now)
+        app._strategy.adopt_position(
+            -1, fake_now - dt.timedelta(hours=3), -0.75, "KR_open")
+        app._blocked_entries = 2
+        app._maybe_send_digest()
+        msg = notifier.sent[0]
+        assert "side=-1" in msg and "mtm=-0.75%" in msg
+        assert "held=3.0h" in msg and "blocked entries: 2" in msg
+        assert app._blocked_entries == 0   # reset after digest

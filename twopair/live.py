@@ -109,6 +109,9 @@ class LiveApp:
         self._prev_ts: Optional[dt.datetime] = None
         self._last_fx: Optional[float] = None
         self._fx_ts: Optional[dt.datetime] = None
+        self._last_sig: Optional[SignalState] = None
+        self._last_digest_day: Optional[dt.date] = None
+        self._blocked_entries = 0
 
     # ------------------------------------------------------------------ setup
     def warmup(self, days: int = 7) -> None:
@@ -196,6 +199,7 @@ class LiveApp:
         decision = self._strategy.on_bar(sig, 0.0, 0.0)
         self._journal.record_bar(sig, bar.kr, bar.us, bar.fx)
         self._prev_ts = bar.ts
+        self._last_sig = sig
 
         if decision.z_alert:
             msg = f"|z| alert: z={sig.z:.2f} at {sig.ts}"
@@ -205,6 +209,54 @@ class LiveApp:
             self._handle_open(decision.side, bar, sig)
         elif decision.action == Action.CLOSE:
             self._handle_close(bar, sig, decision)
+        self._maybe_send_digest()
+
+    # ---------------------------------------------------------------- digest
+    def _maybe_send_digest(self) -> None:
+        """Sends one health/state digest per UTC day (also after restarts).
+
+        The digest doubles as a dead-man signal for the operator: its
+        absence at the expected time means the loop is not running.
+        """
+        cfg = self._cfg
+        if cfg.digest_utc_hour < 0:
+            return
+        now = _utcnow()
+        if now.hour < cfg.digest_utc_hour or self._last_digest_day == now.date():
+            return
+        self._last_digest_day = now.date()
+        self._notify.send(self._digest_text(now))
+        self._blocked_entries = 0
+
+    def _digest_text(self, now: dt.datetime) -> str:
+        """Builds the digest message from in-memory and journal state."""
+        sig = self._last_sig
+        if sig is not None and sig.z is not None:
+            sig_line = f"z={sig.z:+.2f} ({sig.seg}) @ {sig.ts:%m-%d %H:%M}"
+        elif sig is not None:
+            sig_line = f"z=warmup ({sig.seg}) @ {sig.ts:%m-%d %H:%M}"
+        else:
+            sig_line = "z=n/a (no bars yet)"
+        pos = self._strategy.position
+        if pos is None:
+            pos_line = "position: FLAT"
+        else:
+            pos_line = (f"position: side={pos.side:+d} "
+                        f"mtm={pos.mtm_pct:+.2f}% "
+                        f"held={pos.held_hours(now):.1f}h")
+        bars_24h = "n/a"
+        try:
+            rows = self._journal.query(
+                "SELECT COUNT(*) FROM bars WHERE ts >= ?",
+                ((now - dt.timedelta(hours=24)).isoformat(),))
+            bars_24h = str(rows[0][0])
+        except Exception as err:  # noqa: BLE001 — digest is best effort
+            logger.warning("digest journal query failed: %s", err)
+        return (f"digest {now:%Y-%m-%d} [{self._cfg.mode_label()}]\n"
+                f"{sig_line}\n{pos_line}\n"
+                f"today realized: {self._guard.daily_pnl_pct(now):+.2f}%\n"
+                f"bars 24h: {bars_24h} | blocked entries: "
+                f"{self._blocked_entries}")
 
     # ------------------------------------------------------------------ sync
     def _sync_position(self, bar: Bar) -> bool:
@@ -277,6 +329,7 @@ class LiveApp:
             # Roll back the entry: the strategy opened a position internally,
             # but risk forbids it. Discard silently and re-arm cleanly.
             self._strategy.cancel_entry()
+            self._blocked_entries += 1
             msgs = "; ".join(v.message for v in blocked)
             logger.warning("entry blocked: %s", msgs)
             self._notify.send(f"entry blocked: {msgs}")

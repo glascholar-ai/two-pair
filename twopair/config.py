@@ -60,6 +60,8 @@ class Config:
                                           # heartbeat; 0 disables
 
     # System.
+    digest_utc_hour: int = 0             # daily Telegram digest after this
+                                         # UTC hour; -1 disables
     db_path: str = "data/journal.sqlite"
     poll_grace_seconds: int = 10         # wait after bar close before fetching
     binance_base: str = "https://fapi.binance.com"
