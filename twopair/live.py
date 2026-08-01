@@ -22,11 +22,11 @@ import pandas as pd
 
 from twopair import data as datamod
 from twopair.config import Config
-from twopair.executor import Executor
+from twopair.executor import Executor, PairView
 from twopair.journal import Journal
 from twopair.notify import Notifier
 from twopair.risk import RiskGuard
-from twopair.signal import Bar, SignalEngine, SignalState
+from twopair.signal import Bar, SignalEngine, SignalState, segment_of
 from twopair.strategy import Action, Decision, Strategy
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,59 @@ logger = logging.getLogger(__name__)
 
 def _utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
+
+
+class SyncAction:
+    """What the per-cycle position sync decided (string constants)."""
+
+    NONE = "none"        # exchange flat, local flat — nothing to do
+    TRACK = "track"      # healthy pair matching local side — refresh MTM
+    ADOPT = "adopt"      # healthy pair, no local position — install it
+    DROP = "drop"        # exchange flat but local has one — discard local
+    REPAIR = "repair"    # orphan leg / same-sign / size or side mismatch
+
+
+def classify_sync(view: PairView, kr_price: float, us_price: float,
+                  local_side: int, dust_usdt: float,
+                  tolerance_pct: float) -> tuple[str, int, str]:
+    """Classifies exchange state against local state (pure function).
+
+    Args:
+        view: Exchange truth for the two legs.
+        kr_price: Current KR-leg price (to value quantities).
+        us_price: Current US-leg price.
+        local_side: Strategy's position side, 0 when flat.
+        dust_usdt: Leg notionals below this count as flat.
+        tolerance_pct: Max abs notional mismatch between legs, in %.
+
+    Returns:
+        (action, side, detail) where action is a SyncAction constant and
+        side is the exchange pair's ratio side (0 unless a healthy pair).
+    """
+    kr_notional = view.kr_qty * kr_price
+    us_notional = view.us_qty * us_price
+    kr_on = abs(kr_notional) >= dust_usdt
+    us_on = abs(us_notional) >= dust_usdt
+    if not kr_on and not us_on:
+        if local_side == 0:
+            return SyncAction.NONE, 0, ""
+        return SyncAction.DROP, 0, "exchange flat but local position exists"
+    if kr_on and us_on and kr_notional * us_notional < 0:
+        bigger = max(abs(kr_notional), abs(us_notional))
+        mismatch = abs(abs(kr_notional) - abs(us_notional)) / bigger * 100.0
+        if mismatch <= tolerance_pct:
+            side = 1 if view.kr_qty > 0 else -1
+            if local_side == 0:
+                return SyncAction.ADOPT, side, f"mismatch {mismatch:.1f}%"
+            if local_side == side:
+                return SyncAction.TRACK, side, ""
+            return (SyncAction.REPAIR, side,
+                    f"side conflict: local {local_side:+d} vs exchange "
+                    f"{side:+d}")
+        return (SyncAction.REPAIR, 0,
+                f"leg notional mismatch {mismatch:.1f}% > "
+                f"{tolerance_pct:.1f}%")
+    return SyncAction.REPAIR, 0, "orphan or same-direction legs"
 
 
 class LiveApp:
@@ -81,6 +134,29 @@ class LiveApp:
         self._last_fx = float(fx_col[-1])
         self._fx_ts = cast(dt.datetime, pair.index[-1])
         logger.info("warmup done: %d bars to %s", len(pair), self._prev_ts)
+        self._recover_from_journal()
+
+    def _recover_from_journal(self) -> None:
+        """Seeds the daily-loss counter and re-arm latch after a restart.
+
+        Positions themselves are recovered from the exchange by the first
+        per-cycle sync; the journal only supplies the two signal-space
+        scalars the exchange cannot know.
+        """
+        cfg = self._cfg
+        now = _utcnow()
+        today_pnl = self._journal.realized_pnl_on_day(
+            now.date().isoformat(), cfg.mode)
+        if today_pnl != 0.0:
+            self._guard.record_trade_pnl(now, today_pnl)
+            logger.info("recovered daily realized PnL %+.2f%%", today_pnl)
+        last = self._journal.last_trade(cfg.mode)
+        if last is not None and last[1] == "stop":
+            exit_ts = dt.datetime.fromisoformat(last[0])
+            age_h = (now - exit_ts).total_seconds() / 3600.0
+            if age_h <= cfg.rearm_recovery_hours:
+                self._strategy.set_rearm(True)
+                logger.info("re-arm latch restored (stop %.1fh ago)", age_h)
 
     def _refresh_funding(self, start_ms: int) -> None:
         cfg = self._cfg
@@ -109,21 +185,26 @@ class LiveApp:
         time.sleep(max(0.0, next_close + cfg.poll_grace_seconds - now))
 
     def step(self) -> None:
-        """Fetches the latest closed bar and advances the strategy."""
+        """Syncs with the exchange, then advances the strategy by one bar."""
         bar = self._fetch_latest_bar()
         if bar is None:
             return
+        synced = self._sync_position(bar)
         funding_start = int((bar.ts - dt.timedelta(hours=2)).timestamp() * 1000)
         self._refresh_funding(min(
             funding_start,
             int((self._prev_ts or bar.ts).timestamp() * 1000)))
         sig = self._engine.update(bar)
 
+        # When the exchange view is authoritative (live, sync succeeded) the
+        # MTM was just overwritten with real-money truth — pass zero deltas so
+        # local accrual does not double-count. Paper keeps backtest-identical
+        # local accrual.
         dlr = 0.0
         funding_pct = 0.0
         prev_ts, prev_lr = self._prev_ts, self._prev_lr
-        if (self._strategy.position is not None and prev_lr is not None
-                and prev_ts is not None):
+        if (not synced and self._strategy.position is not None
+                and prev_lr is not None and prev_ts is not None):
             dlr = sig.lr - prev_lr
             kr_f = datamod.funding_between(self._funding_kr, prev_ts, bar.ts)
             us_f = datamod.funding_between(self._funding_us, prev_ts, bar.ts)
@@ -140,6 +221,72 @@ class LiveApp:
             self._handle_open(decision.side, bar, sig)
         elif decision.action == Action.CLOSE:
             self._handle_close(bar, sig, decision)
+
+    # ------------------------------------------------------------------ sync
+    def _sync_position(self, bar: Bar) -> bool:
+        """Reconciles local position state with the exchange (plan A).
+
+        Returns True when exchange truth was applied (live mode, view read
+        successfully); False when local state remains authoritative (paper
+        mode or view fetch failure).
+        """
+        pos = self._strategy.position
+        entry_ts = pos.entry_ts if pos is not None else None
+        try:
+            view = self._exec.position_view(entry_ts)
+        except Exception as err:  # noqa: BLE001 — sync must not kill the loop
+            self._journal.record_event(bar.ts, "WARN",
+                                       f"position sync failed: {err}")
+            return False
+        if view is None:
+            return False
+        local_side = pos.side if pos is not None else 0
+        action, side, detail = classify_sync(
+            view, bar.kr, bar.us, local_side,
+            self._cfg.dust_usdt, self._cfg.sync_tolerance_pct)
+        if action == SyncAction.NONE:
+            return True
+        if action == SyncAction.TRACK:
+            self._strategy.sync_mtm(view.pnl_pct)
+            return True
+        if action == SyncAction.ADOPT:
+            self._adopt(view, bar, side, detail)
+            return True
+        if action == SyncAction.DROP:
+            self._strategy.drop_position()
+            msg = f"position closed externally ({detail}); local state dropped"
+            self._journal.record_event(bar.ts, "WARN", msg)
+            self._notify.send(msg)
+            return True
+        # REPAIR: flatten everything, then run flat.
+        result = self._exec.close_all(bar.kr, bar.us)
+        for fill in result.fills:
+            self._journal.record_fill(bar.ts, fill.symbol, fill.side,
+                                      fill.qty, fill.price, fill.order_id,
+                                      "repair")
+        if self._strategy.position is not None:
+            self._strategy.drop_position()
+        msg = f"sync repair: {detail}; flattened (ok={result.ok})"
+        self._journal.record_event(bar.ts, "ERROR", msg)
+        self._notify.send(msg)
+        return True
+
+    def _adopt(self, view: PairView, bar: Bar, side: int,
+               detail: str) -> None:
+        """Installs an exchange position the strategy did not know about."""
+        entry_ts = _utcnow()
+        hint = self._journal.last_open_fill_ts()
+        if hint is not None:
+            hinted = dt.datetime.fromisoformat(hint)
+            if hinted <= entry_ts:
+                entry_ts = hinted
+        self._strategy.adopt_position(side, entry_ts, view.pnl_pct,
+                                      segment_of(bar.ts))
+        msg = (f"adopted exchange position side={side:+d} "
+               f"pnl={view.pnl_pct:+.2f}% entry~{entry_ts:%m-%d %H:%M} "
+               f"({detail})")
+        self._journal.record_event(bar.ts, "WARN", msg)
+        self._notify.send(msg)
 
     # ---------------------------------------------------------------- actions
     def _handle_open(self, side: int, bar: Bar, sig: SignalState) -> None:

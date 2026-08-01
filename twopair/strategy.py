@@ -107,6 +107,49 @@ class Strategy:
         """
         self._pos = None
 
+    def adopt_position(self, side: int, entry_ts: dt.datetime,
+                       mtm_pct: float, seg: str) -> None:
+        """Installs a position discovered on the exchange (recovery/sync).
+
+        Signal-space entry metadata (entry_lr, entry_z) is unknowable for an
+        adopted position and is zeroed; it is bookkeeping only and drives no
+        decision.
+
+        Raises:
+            ValueError: If a position is already held or side is invalid.
+        """
+        if self._pos is not None:
+            raise ValueError("cannot adopt: position already held")
+        if side not in (1, -1):
+            raise ValueError(f"invalid side {side}")
+        self._pos = Position(entry_ts=entry_ts, entry_lr=0.0, entry_z=0.0,
+                             entry_seg=seg, side=side, mtm_pct=mtm_pct)
+        self._alerted = False
+
+    def sync_mtm(self, mtm_pct: float) -> None:
+        """Overwrites the position MTM with exchange truth (plan A sync)."""
+        if self._pos is None:
+            raise ValueError("no position to sync")
+        self._pos.mtm_pct = mtm_pct
+
+    def drop_position(self) -> None:
+        """Discards the local position because the exchange shows none.
+
+        The close happened outside this process (manual intervention or a
+        repair); its PnL is unknown here, so no Trade is recorded — the
+        caller should journal an event instead.
+        """
+        self._pos = None
+
+    @property
+    def need_rearm(self) -> bool:
+        """Whether entries are suppressed until |z| returns below z_in."""
+        return self._need_rearm
+
+    def set_rearm(self, value: bool) -> None:
+        """Sets the re-arm latch (startup recovery heuristic)."""
+        self._need_rearm = value
+
     def on_bar(self, sig: SignalState, dlr: float,
                funding_long_ratio_pct: float) -> Decision:
         """Advances the state machine by one bar.

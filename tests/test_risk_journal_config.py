@@ -111,6 +111,31 @@ class TestJournal:
         assert journal.query("SELECT COUNT(*) FROM fills")[0][0] == 1
         journal.close()
 
+    def test_recovery_queries(self, tmp_path: pathlib.Path) -> None:
+        journal = Journal(str(tmp_path / "j.sqlite"))
+        assert journal.last_open_fill_ts() is None
+        assert journal.last_trade("paper") is None
+        assert journal.realized_pnl_on_day("2026-07-06", "paper") == 0.0
+
+        journal.record_fill(MONDAY, "KRUSDT", "BUY", 0.9, 1100.0, "1", "open")
+        later = MONDAY + dt.timedelta(hours=2)
+        journal.record_fill(later, "KRUSDT", "SELL", 0.9, 1105.0, "2", "close")
+        assert journal.last_open_fill_ts() == MONDAY.isoformat()
+
+        for pnl, reason, hours in ((-1.2, CloseReason.STOP, 3),
+                                   (0.5, CloseReason.CONVERGED, 5)):
+            journal.record_trade(
+                Trade(entry_ts=MONDAY, exit_ts=MONDAY + dt.timedelta(hours=hours),
+                      side=1, entry_z=2.1, max_abs_z=2.5, entry_seg="KR_open",
+                      held_hours=float(hours), pnl_pct=pnl, reason=reason),
+                "paper")
+        last = journal.last_trade("paper")
+        assert last is not None and last[1] == "conv"
+        assert journal.realized_pnl_on_day(
+            "2026-07-06", "paper") == pytest.approx(-0.7)
+        assert journal.last_trade("live") is None
+        journal.close()
+
     def test_bar_upsert(self, tmp_path: pathlib.Path) -> None:
         journal = Journal(str(tmp_path / "j.sqlite"))
         sig = SignalState(ts=MONDAY, lr=1.0, seg="KR_open", mu=None, sd=None,

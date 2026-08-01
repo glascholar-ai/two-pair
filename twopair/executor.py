@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import dataclasses
+import datetime as dt
 import hashlib
 import hmac
 import json
@@ -43,6 +44,19 @@ class PairExecution:
     error: str = ""
 
 
+@dataclasses.dataclass(frozen=True)
+class PairView:
+    """Exchange truth for the pair (plan-A per-cycle sync).
+
+    pnl_pct = (sum of unrealized PnL + funding income since entry_ts)
+    as a percentage of single-leg notional.
+    """
+
+    kr_qty: float   # signed position amount, KR leg
+    us_qty: float   # signed position amount, US leg
+    pnl_pct: float
+
+
 class Executor:
     """Interface: open or close the ratio position with equal leg notionals."""
 
@@ -53,6 +67,15 @@ class Executor:
 
     def close_all(self, kr_price: float, us_price: float) -> PairExecution:
         """Flattens both legs of the currently held position."""
+        raise NotImplementedError
+
+    def position_view(self,
+                      entry_ts: Optional[dt.datetime]) -> Optional[PairView]:
+        """Reads exchange truth for the pair.
+
+        Returns None when no external source of truth exists (paper mode);
+        the caller must then trust its local state.
+        """
         raise NotImplementedError
 
 
@@ -93,6 +116,11 @@ class PaperExecutor(Executor):
         self._open = {}
         return PairExecution(True, fills)
 
+    def position_view(self,
+                      entry_ts: Optional[dt.datetime]) -> Optional[PairView]:
+        """Paper mode has no external truth; local state is authoritative."""
+        return None
+
 
 class BinanceClient:
     """Minimal signed REST client for Binance USDT-M futures."""
@@ -111,8 +139,13 @@ class BinanceClient:
 
     def request(self, method: str, path: str,
                 params: Optional[Dict[str, str]] = None,
-                signed: bool = False) -> dict:
-        """Performs one REST call and returns the parsed JSON body."""
+                signed: bool = False):
+        """Performs one REST call and returns the parsed JSON body.
+
+        Returns:
+            Parsed JSON: dict for most endpoints, list for a few
+            (positionRisk, income).
+        """
         params = dict(params or {})
         if signed:
             params["timestamp"] = str(int(time.time() * 1000))
@@ -176,6 +209,21 @@ class BinanceClient:
         rows = self.request("GET", "/fapi/v2/positionRisk",
                             {"symbol": symbol}, signed=True)
         return float(rows[0]["positionAmt"]) if rows else 0.0
+
+    def position_risk_all(self) -> List[dict]:
+        """Returns positionRisk rows for all symbols (single call)."""
+        rows = self.request("GET", "/fapi/v2/positionRisk", {}, signed=True)
+        return list(rows) if isinstance(rows, list) else []
+
+    def funding_income(self, symbol: str, start_ms: int) -> float:
+        """Sums FUNDING_FEE income for a symbol since start_ms (USDT)."""
+        rows = self.request("GET", "/fapi/v1/income", {
+            "symbol": symbol, "incomeType": "FUNDING_FEE",
+            "startTime": str(start_ms), "limit": "1000",
+        }, signed=True)
+        if not isinstance(rows, list):
+            return 0.0
+        return sum(float(r.get("income", 0.0)) for r in rows)
 
     def step_size(self, symbol: str) -> float:
         """Returns the LOT_SIZE step for a symbol."""
@@ -357,3 +405,28 @@ class LiveExecutor(Executor):
         if not orders:
             return PairExecution(True, [])
         return self._both(orders, "close")
+
+    def position_view(self,
+                      entry_ts: Optional[dt.datetime]) -> Optional[PairView]:
+        """Reads both legs and real-money PnL from the exchange.
+
+        pnl_pct combines unRealizedProfit of both legs with FUNDING_FEE
+        income accrued since entry_ts (settled funding leaves the position
+        and lands in the wallet, so unrealized alone would miss it).
+        """
+        rows = self._client.position_risk_all()
+        qty = {self._kr: 0.0, self._us: 0.0}
+        unreal = 0.0
+        for row in rows:
+            symbol = str(row.get("symbol", ""))
+            if symbol in qty:
+                qty[symbol] = float(row.get("positionAmt") or 0.0)
+                unreal += float(row.get("unRealizedProfit") or 0.0)
+        funding = 0.0
+        if entry_ts is not None and (qty[self._kr] != 0 or qty[self._us] != 0):
+            start_ms = int(entry_ts.timestamp() * 1000)
+            for symbol in (self._kr, self._us):
+                funding += self._client.funding_income(symbol, start_ms)
+        pnl_pct = (unreal + funding) / self._notional * 100.0
+        return PairView(kr_qty=qty[self._kr], us_qty=qty[self._us],
+                        pnl_pct=pnl_pct)
