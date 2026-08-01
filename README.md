@@ -22,17 +22,36 @@
   已降级为观察项，等更多样本裁决；分段 std 是它们的原则性替代
 - 杠杆建议：λ（单腿名义/资金）≤ 2，全仓模式，保证金缓冲 ≥ 3× 历史 MDD
 
-## 文件
+## 代码结构（v1.0）
 
-- `pair_backtest.py` — 基线回测（含权益曲线 / MDD / Sharpe），funding 实时拉取
-- `data/skhx_pair_5m.csv` — 5m 双腿价格 + USDKRW（刷新方式见 git/对话历史中的下载脚本）
-- `data/skhx_pair_1m.csv` — 1m 数据（仅研究用，不进信号）
-- `data/pair_trades_baseline.csv`、`data/pair_equity_curve.csv` — 回测输出
-- `research/` — 前期调研存档（币安/Hyperliquid 股票 perp funding 分析、海力士 funding 专项），
-  脚本移动后相对路径未修正，仅作参考
+```
+twopair/               策略库 —— 回测与实盘共用同一信号路径
+  config.py            全部参数（frozen dataclass + JSON/env 加载）
+  signal.py            SignalEngine：增量 rolling 统计、时段分段、z（纯函数，无 I/O）
+  strategy.py          Strategy 状态机：进出场、MTM 止损、再武装、告警
+  data.py              币安 klines/funding、Yahoo FX、数据集组装
+  backtest.py          回测 runner（复用 SignalEngine + Strategy）
+  live.py              LiveApp：5 分钟轮询循环（warmup → step → 执行/风控/记录）
+  executor.py          PaperExecutor / LiveExecutor（双腿并发市价、断腿自动修复）
+  risk.py              RiskGuard：数据陈旧、日亏熔断、FX 跳空告警
+  journal.py           SQLite：bars / trades / fills / events 全量落库
+  notify.py            Telegram（未配置时降级为日志）
+pair_backtest.py       回测 CLI（--mtm-stop 覆盖；输出交易表+权益指标）
+run_live.py            实盘/模拟盘 CLI（默认 paper；--live 需 BINANCE_API_KEY/SECRET）
+scripts/refresh_data.py  刷新 data/ 下的价格与 funding CSV
+tests/                 49 个测试：单元 + 平价（引擎 vs 独立 pandas 参考实现逐笔一致，
+                       并钉死基线数字：stop2.5→26笔/+16.51%，stop off→24笔/+20.05%）
+data/
+  skhx_pair_5m.csv     5m 双腿价格 + USDKRW
+  funding_kr.csv/us    两腿 funding 结算
+  journal.sqlite       模拟盘/实盘 journal（运行后生成）
+research/              前期调研存档（币安/HL 股票 perp funding 分析；相对路径未修正）
+```
+
+运行:`python3 -m pytest tests/` · `python3 pair_backtest.py` · `python3 run_live.py`(paper)
 
 ## 下一步
 
-1. 实时监控 / 模拟盘（同一信号函数库，积累样本外记录与时段标签）
-2. 平价测试：历史数据喂实盘引擎，断言与回测逐笔一致
-3. 自动交易系统设计已定稿（Python + binance-futures-connector + SQLite + Telegram，见对话记录）
+1. paper 模式跑 2~4 周,积累样本外记录与时段标签(journal 里已带)
+2. 对账 paper vs 回测口径后,VPS(东京)+ systemd 部署,小仓位 live
+3. 手续费恢复收费时重估单笔期望(约 −0.1%/笔)
