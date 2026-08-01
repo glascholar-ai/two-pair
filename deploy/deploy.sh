@@ -11,6 +11,9 @@ set -euo pipefail
 REMOTE="${REMOTE:-instance-two-pair}"
 DEST="${DEST:-/home/luna/trading}"
 SERVICE_ARGS="${SERVICE_ARGS:-}"
+# Telegram (optional): secret name holding the bot token + the chat id.
+TG_SECRET="${TG_SECRET:-telegram-bot-token}"
+TG_CHAT_ID="${TG_CHAT_ID:-}"
 
 LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$LOCAL_DIR"
@@ -33,6 +36,11 @@ ssh "$REMOTE" "cd '$DEST' \
     && ./venv/bin/pip install --quiet -r requirements.txt"
 
 echo "== 4/5 systemd unit =="
+TG_ENV=""
+if [[ -n "$TG_CHAT_ID" ]]; then
+    TG_ENV="Environment=SECRET_TELEGRAM_TOKEN=$TG_SECRET
+Environment=TELEGRAM_CHAT_ID=$TG_CHAT_ID"
+fi
 ssh "$REMOTE" "sudo tee /etc/systemd/system/twopair.service > /dev/null" <<EOF
 [Unit]
 Description=twopair trading loop
@@ -43,6 +51,7 @@ Wants=network-online.target
 Type=simple
 User=luna
 WorkingDirectory=$DEST
+$TG_ENV
 ExecStart=$DEST/deploy/start.sh $SERVICE_ARGS
 Restart=always
 RestartSec=30
