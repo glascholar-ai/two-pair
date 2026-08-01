@@ -1,8 +1,9 @@
-"""SQLite journal: every bar's signal state, trades, fills, and events.
+"""SQLite flight recorder: every bar's signal state, trades, and fills.
 
-The journal is append-only and doubles as the research dataset for judging
-deferred rules (session tags, max-z, stop hits) once enough live samples
-accumulate.
+Pure research dataset (session tags, max-z, stop hits) for judging the
+deferred rules once enough live samples accumulate. The runtime has no hard
+dependency on it: recovery reads exchange APIs, except the best-effort
+re-arm heuristic (last_trade). Deleting the file is always safe.
 """
 from __future__ import annotations
 
@@ -26,9 +27,6 @@ CREATE TABLE IF NOT EXISTS trades (
 CREATE TABLE IF NOT EXISTS fills (
     ts TEXT, symbol TEXT, side TEXT, qty REAL, price REAL,
     order_id TEXT, purpose TEXT
-);
-CREATE TABLE IF NOT EXISTS events (
-    ts TEXT, level TEXT, message TEXT
 );
 """
 
@@ -71,12 +69,6 @@ class Journal:
             (ts.isoformat(), symbol, side, qty, price, order_id, purpose))
         self._conn.commit()
 
-    def record_event(self, ts: dt.datetime, level: str, message: str) -> None:
-        """Stores a log event (level: INFO/WARN/ERROR)."""
-        self._conn.execute("INSERT INTO events VALUES (?,?,?)",
-                           (ts.isoformat(), level, message))
-        self._conn.commit()
-
     def query(self, sql: str,
               params: Sequence[Any] = ()) -> list[tuple[Any, ...]]:
         """Runs a read-only query and returns all rows."""
@@ -87,22 +79,9 @@ class Journal:
         rows = self.query("SELECT MAX(ts) FROM bars")
         return rows[0][0] if rows and rows[0][0] else None
 
-    def last_open_fill_ts(self) -> Optional[str]:
-        """ISO timestamp of the most recent 'open' fill (recovery hint)."""
-        rows = self.query(
-            "SELECT MAX(ts) FROM fills WHERE purpose = 'open'")
-        return rows[0][0] if rows and rows[0][0] else None
-
     def last_trade(self, mode: str) -> Optional[tuple[str, str]]:
         """(exit_ts, reason) of the most recent trade in a mode, if any."""
         rows = self.query(
             "SELECT exit_ts, reason FROM trades WHERE mode = ? "
             "ORDER BY exit_ts DESC LIMIT 1", (mode,))
         return (str(rows[0][0]), str(rows[0][1])) if rows else None
-
-    def realized_pnl_on_day(self, day_iso: str, mode: str) -> float:
-        """Sum of trade PnL (%) whose exit falls on the given UTC date."""
-        rows = self.query(
-            "SELECT COALESCE(SUM(pnl_pct), 0) FROM trades "
-            "WHERE mode = ? AND substr(exit_ts, 1, 10) = ?", (mode, day_iso))
-        return float(rows[0][0]) if rows else 0.0

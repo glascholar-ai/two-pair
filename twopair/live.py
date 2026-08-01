@@ -135,21 +135,23 @@ class LiveApp:
         self._fx_ts = cast(dt.datetime, pair.index[-1])
         logger.info("warmup done: %d bars to %s", len(pair), self._prev_ts)
         self._exec.cancel_all_open_orders()
-        self._journal.record_event(_utcnow(), "INFO",
-                                   "startup: cancelled all open orders")
-        self._recover_from_journal()
+        logger.info("startup: cancelled all open orders")
+        self._recover_state()
 
-    def _recover_from_journal(self) -> None:
+    def _recover_state(self) -> None:
         """Seeds the daily-loss counter and re-arm latch after a restart.
 
-        Positions themselves are recovered from the exchange by the first
-        per-cycle sync; the journal only supplies the two signal-space
-        scalars the exchange cannot know.
+        Positions are recovered by the first per-cycle sync; the daily-loss
+        counter comes from the exchange income API (includes manual trades);
+        only the re-arm latch falls back to the journal, best effort.
         """
         cfg = self._cfg
         now = _utcnow()
-        today_pnl = self._journal.realized_pnl_on_day(
-            now.date().isoformat(), cfg.mode_label())
+        try:
+            today_pnl = self._exec.realized_pnl_today_pct(now)
+        except Exception as err:  # noqa: BLE001 — recovery is best effort
+            logger.warning("daily-PnL recovery failed: %s", err)
+            today_pnl = 0.0
         if today_pnl != 0.0:
             self._guard.record_trade_pnl(now, today_pnl)
             logger.info("recovered daily realized PnL %+.2f%%", today_pnl)
@@ -171,7 +173,6 @@ class LiveApp:
                 self.step()
             except Exception as err:  # noqa: BLE001 — loop must survive
                 logger.exception("cycle failed")
-                self._journal.record_event(_utcnow(), "ERROR", str(err))
                 self._notify.send(f"cycle error: {err}")
 
     def _sleep_to_next_bar(self) -> None:
@@ -198,7 +199,7 @@ class LiveApp:
 
         if decision.z_alert:
             msg = f"|z| alert: z={sig.z:.2f} at {sig.ts}"
-            self._journal.record_event(sig.ts, "WARN", msg)
+            logger.warning(msg)
             self._notify.send(msg)
         if decision.action == Action.OPEN:
             self._handle_open(decision.side, bar, sig)
@@ -217,8 +218,7 @@ class LiveApp:
         try:
             view = self._exec.position_view(entry_ts)
         except Exception as err:  # noqa: BLE001 — sync must not kill the loop
-            self._journal.record_event(bar.ts, "WARN",
-                                       f"position sync failed: {err}")
+            logger.warning("position sync failed: %s", err)
             return False
         local_side = pos.side if pos is not None else 0
         action, side, detail = classify_sync(
@@ -235,7 +235,7 @@ class LiveApp:
         if action == SyncAction.DROP:
             self._strategy.drop_position()
             msg = f"position closed externally ({detail}); local state dropped"
-            self._journal.record_event(bar.ts, "WARN", msg)
+            logger.warning(msg)
             self._notify.send(msg)
             return True
         # REPAIR: flatten everything, then run flat.
@@ -247,25 +247,26 @@ class LiveApp:
         if self._strategy.position is not None:
             self._strategy.drop_position()
         msg = f"sync repair: {detail}; flattened (ok={result.ok})"
-        self._journal.record_event(bar.ts, "ERROR", msg)
+        logger.error(msg)
         self._notify.send(msg)
         return True
 
     def _adopt(self, view: PairView, bar: Bar, side: int,
                detail: str) -> None:
         """Installs an exchange position the strategy did not know about."""
-        entry_ts = _utcnow()
-        hint = self._journal.last_open_fill_ts()
-        if hint is not None:
-            hinted = dt.datetime.fromisoformat(hint)
-            if hinted <= entry_ts:
-                entry_ts = hinted
+        entry_ts: Optional[dt.datetime] = None
+        try:
+            entry_ts = self._exec.estimate_entry_ts()
+        except Exception as err:  # noqa: BLE001 — hint is best effort
+            logger.warning("entry-ts reconstruction failed: %s", err)
+        if entry_ts is None:
+            entry_ts = _utcnow()
         self._strategy.adopt_position(side, entry_ts, view.pnl_pct,
                                       segment_of(bar.ts))
         msg = (f"adopted exchange position side={side:+d} "
                f"pnl={view.pnl_pct:+.2f}% entry~{entry_ts:%m-%d %H:%M} "
                f"({detail})")
-        self._journal.record_event(bar.ts, "WARN", msg)
+        logger.warning(msg)
         self._notify.send(msg)
 
     # ---------------------------------------------------------------- actions
@@ -277,7 +278,7 @@ class LiveApp:
             # but risk forbids it. Discard silently and re-arm cleanly.
             self._strategy.cancel_entry()
             msgs = "; ".join(v.message for v in blocked)
-            self._journal.record_event(bar.ts, "WARN", f"entry blocked: {msgs}")
+            logger.warning("entry blocked: %s", msgs)
             self._notify.send(f"entry blocked: {msgs}")
             return
         result = self._exec.open_ratio(side, bar.kr, bar.us)
@@ -287,8 +288,7 @@ class LiveApp:
                                       "open")
         if not result.ok:
             self._strategy.cancel_entry()
-            self._journal.record_event(bar.ts, "ERROR",
-                                       f"open failed: {result.error}")
+            logger.error("open failed: %s", result.error)
             self._notify.send(f"OPEN FAILED (repaired): {result.error}")
             return
         self._notify.send(
@@ -312,8 +312,7 @@ class LiveApp:
             f"CLOSE {trade.reason.value} pnl={trade.pnl_pct:+.2f}% "
             f"held={trade.held_hours:.1f}h{status}")
         if not result.ok:
-            self._journal.record_event(bar.ts, "ERROR",
-                                       f"close failed: {result.error}")
+            logger.error("close failed: %s", result.error)
 
     # ------------------------------------------------------------------ data
     def _fetch_latest_bar(self) -> Optional[Bar]:
@@ -330,8 +329,7 @@ class LiveApp:
         us = datamod.fetch_klines(cfg.us_symbol, "5m", start_ms,
                                   cfg.binance_base)
         if open_ts not in kr.index or open_ts not in us.index:
-            self._journal.record_event(now, "WARN",
-                                       f"bar {open_ts} missing on a leg")
+            logger.warning("bar %s missing on a leg", open_ts)
             return None
         try:
             fx = datamod.fetch_fx_yahoo()
@@ -343,7 +341,7 @@ class LiveApp:
                 if gap is not None:
                     self._notify.send(gap.message)
         except ConnectionError as err:
-            self._journal.record_event(now, "WARN", f"fx fetch failed: {err}")
+            logger.warning("fx fetch failed: %s", err)
         if self._last_fx is None:
             return None
         if self._prev_ts is not None and open_ts <= self._prev_ts:

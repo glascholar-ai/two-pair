@@ -126,9 +126,11 @@ class TestStrategyAdoption:
 class _ViewClient:
     """Stub for LiveExecutor.position_view / order-hygiene tests."""
 
-    def __init__(self, rows: List[dict], funding: float) -> None:
+    def __init__(self, rows: List[dict], funding: float,
+                 trades: List[dict] = []) -> None:
         self._rows = rows
         self._funding = funding
+        self._trades = trades
         self.income_calls: List[str] = []
         self.cancel_all_calls: List[str] = []
         self.countdown_calls: List[tuple] = []
@@ -150,6 +152,20 @@ class _ViewClient:
     def countdown_cancel_all(self, symbol: str, countdown_ms: int) -> dict:
         self.countdown_calls.append((symbol, countdown_ms))
         return {}
+
+    def income_sum(self, symbol: str, income_type: str,
+                   start_ms: int) -> float:
+        self.income_calls.append(f"{symbol}:{income_type}")
+        return self._funding
+
+    def position_amt(self, symbol: str) -> float:
+        for row in self._rows:
+            if row.get("symbol") == symbol:
+                return float(row.get("positionAmt", 0.0))
+        return 0.0
+
+    def user_trades(self, symbol: str, start_ms: int) -> List[dict]:
+        return list(self._trades)
 
 
 class TestPositionView:
@@ -198,3 +214,41 @@ class TestOrderHygiene:
         ex = LiveExecutor(client, 1000.0, "KR", "US")  # type: ignore[arg-type]
         ex.arm_deadman(900)
         assert client.countdown_calls == [("KR", 900000), ("US", 900000)]
+
+
+class TestExchangeRecovery:
+    def test_realized_pnl_today_sums_both_legs_and_types(self) -> None:
+        client = _ViewClient([], funding=2.5)
+        ex = LiveExecutor(client, 1000.0, "KR", "US")  # type: ignore[arg-type]
+        pct = ex.realized_pnl_today_pct(dt.datetime(2026, 8, 2, 3, 0,
+                                                    tzinfo=UTC))
+        # 4 income calls x 2.5 USDT / 1000 notional
+        assert pct == pytest.approx(1.0)
+        assert sorted(client.income_calls) == [
+            "KR:COMMISSION", "KR:REALIZED_PNL",
+            "US:COMMISSION", "US:REALIZED_PNL"]
+
+    def test_estimate_entry_ts_walks_fills(self) -> None:
+        t0 = int(dt.datetime(2026, 8, 1, 10, 0, tzinfo=UTC).timestamp() * 1000)
+        trades = [
+            {"time": t0, "side": "BUY", "qty": "0.5"},          # entry part 1
+            {"time": t0 + 60_000, "side": "BUY", "qty": "0.4"}, # entry part 2
+        ]
+        rows = [{"symbol": "KR", "positionAmt": "0.9"}]
+        client = _ViewClient(rows, 0.0, trades)
+        ex = LiveExecutor(client, 1000.0, "KR", "US")  # type: ignore[arg-type]
+        ts = ex.estimate_entry_ts()
+        assert ts is not None
+        assert int(ts.timestamp() * 1000) == t0    # the fill completing amt
+
+    def test_estimate_entry_ts_flat_returns_none(self) -> None:
+        client = _ViewClient([{"symbol": "KR", "positionAmt": "0"}], 0.0)
+        ex = LiveExecutor(client, 1000.0, "KR", "US")  # type: ignore[arg-type]
+        assert ex.estimate_entry_ts() is None
+
+    def test_estimate_entry_ts_unaccounted_returns_none(self) -> None:
+        rows = [{"symbol": "KR", "positionAmt": "0.9"}]
+        trades = [{"time": 1, "side": "BUY", "qty": "0.2"}]  # only 0.2 of 0.9
+        client = _ViewClient(rows, 0.0, trades)
+        ex = LiveExecutor(client, 1000.0, "KR", "US")  # type: ignore[arg-type]
+        assert ex.estimate_entry_ts() is None

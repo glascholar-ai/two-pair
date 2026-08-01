@@ -165,15 +165,27 @@ class BinanceClient:
         rows = self.request("GET", "/fapi/v2/positionRisk", {}, signed=True)
         return list(rows) if isinstance(rows, list) else []
 
-    def funding_income(self, symbol: str, start_ms: int) -> float:
-        """Sums FUNDING_FEE income for a symbol since start_ms (USDT)."""
+    def income_sum(self, symbol: str, income_type: str,
+                   start_ms: int) -> float:
+        """Sums one income type for a symbol since start_ms (USDT)."""
         rows = self.request("GET", "/fapi/v1/income", {
-            "symbol": symbol, "incomeType": "FUNDING_FEE",
+            "symbol": symbol, "incomeType": income_type,
             "startTime": str(start_ms), "limit": "1000",
         }, signed=True)
         if not isinstance(rows, list):
             return 0.0
         return sum(float(r.get("income", 0.0)) for r in rows)
+
+    def funding_income(self, symbol: str, start_ms: int) -> float:
+        """Sums FUNDING_FEE income for a symbol since start_ms (USDT)."""
+        return self.income_sum(symbol, "FUNDING_FEE", start_ms)
+
+    def user_trades(self, symbol: str, start_ms: int) -> List[dict]:
+        """Returns account fills for a symbol since start_ms."""
+        rows = self.request("GET", "/fapi/v1/userTrades", {
+            "symbol": symbol, "startTime": str(start_ms), "limit": "1000",
+        }, signed=True)
+        return list(rows) if isinstance(rows, list) else []
 
     def step_size(self, symbol: str) -> float:
         """Returns the LOT_SIZE step for a symbol."""
@@ -375,6 +387,45 @@ class LiveExecutor:
                 self._client.countdown_cancel_all(symbol, seconds * 1000)
             except Exception as err:  # noqa: BLE001 — best effort
                 self._on_event(f"deadman arm failed for {symbol}: {err}")
+
+    def realized_pnl_today_pct(self, now: dt.datetime) -> float:
+        """Realized PnL + commissions since UTC midnight, % of leg notional.
+
+        Exchange-side replacement for the journal daily-loss recovery:
+        includes manual trades on these symbols too.
+        """
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_ms = int(day_start.timestamp() * 1000)
+        total = 0.0
+        for symbol in (self._kr, self._us):
+            for income_type in ("REALIZED_PNL", "COMMISSION"):
+                total += self._client.income_sum(symbol, income_type, start_ms)
+        return total / self._notional * 100.0
+
+    def estimate_entry_ts(self,
+                          lookback_hours: float = 48.0) -> Optional[dt.datetime]:
+        """Reconstructs the current position's entry time from userTrades.
+
+        Walks KR-leg fills newest-to-oldest, accumulating signed quantity
+        until it accounts for the current position — that fill opened it.
+        Returns None when flat or when the fills don't add up (stale data,
+        position older than the lookback).
+        """
+        amt = self._client.position_amt(self._kr)
+        if amt == 0:
+            return None
+        now_ms = int(time.time() * 1000)
+        start_ms = now_ms - int(lookback_hours * 3600 * 1000)
+        fills = self._client.user_trades(self._kr, start_ms)
+        fills.sort(key=lambda r: int(r.get("time", 0)), reverse=True)
+        acc = 0.0
+        for fill in fills:
+            qty = float(fill.get("qty", 0.0))
+            acc += qty if str(fill.get("side")) == "BUY" else -qty
+            if abs(acc - amt) <= max(1e-9, abs(amt) * 1e-6):
+                return dt.datetime.fromtimestamp(
+                    int(fill["time"]) / 1000.0, dt.timezone.utc)
+        return None
 
     def position_view(self,
                       entry_ts: Optional[dt.datetime]) -> PairView:
