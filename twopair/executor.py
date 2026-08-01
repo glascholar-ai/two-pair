@@ -10,6 +10,7 @@ from __future__ import annotations
 import concurrent.futures
 import dataclasses
 import datetime as dt
+import decimal
 import hashlib
 import hmac
 import json
@@ -100,24 +101,25 @@ class BinanceClient:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.load(resp)
 
-    def market_order(self, symbol: str, side: str, qty: float,
+    def market_order(self, symbol: str, side: str, qty: str,
                      client_id: str) -> dict:
-        """Places a MARKET order and returns the exchange response."""
+        """Places a MARKET order (qty must be an exact decimal string)."""
         return self.request("POST", "/fapi/v1/order", {
             "symbol": symbol, "side": side, "type": "MARKET",
-            "quantity": f"{qty}", "newClientOrderId": client_id,
+            "quantity": qty, "newClientOrderId": client_id,
         }, signed=True)
 
-    def limit_order_post_only(self, symbol: str, side: str, qty: float,
-                              price: float, client_id: str) -> dict:
+    def limit_order_post_only(self, symbol: str, side: str, qty: str,
+                              price: str, client_id: str) -> dict:
         """Places a post-only (GTX) LIMIT order.
 
-        GTX is rejected by the exchange if it would cross the book, which is
+        qty/price must be exact decimal strings (see format_step). GTX is
+        rejected by the exchange if it would cross the book, which is
         exactly what we want: the order either joins the queue or fails fast.
         """
         return self.request("POST", "/fapi/v1/order", {
             "symbol": symbol, "side": side, "type": "LIMIT",
-            "timeInForce": "GTX", "quantity": f"{qty}", "price": f"{price}",
+            "timeInForce": "GTX", "quantity": qty, "price": price,
             "newClientOrderId": client_id,
         }, signed=True)
 
@@ -187,23 +189,49 @@ class BinanceClient:
         }, signed=True)
         return list(rows) if isinstance(rows, list) else []
 
-    def step_size(self, symbol: str) -> float:
-        """Returns the LOT_SIZE step for a symbol."""
+    def symbol_filters(self, symbol: str) -> tuple:
+        """Returns (LOT_SIZE stepSize, PRICE_FILTER tickSize) for a symbol."""
         info = self.request("GET", "/fapi/v1/exchangeInfo",
                             {"symbol": symbol})
+        step: Optional[float] = None
+        tick: Optional[float] = None
         for sym in info["symbols"]:
             if sym["symbol"] == symbol:
                 for flt in sym["filters"]:
                     if flt["filterType"] == "LOT_SIZE":
-                        return float(flt["stepSize"])
-        raise ValueError(f"no LOT_SIZE for {symbol}")
+                        step = float(flt["stepSize"])
+                    elif flt["filterType"] == "PRICE_FILTER":
+                        tick = float(flt["tickSize"])
+        if step is None or tick is None:
+            raise ValueError(f"missing filters for {symbol}")
+        return step, tick
+
+    def step_size(self, symbol: str) -> float:
+        """Returns the LOT_SIZE step for a symbol."""
+        return float(self.symbol_filters(symbol)[0])
 
 
 def round_step(qty: float, step: float) -> float:
-    """Rounds a quantity DOWN to the exchange step size."""
+    """Rounds a quantity DOWN to the exchange step size (internal math)."""
     if step <= 0:
         raise ValueError("step must be positive")
     return math.floor(qty / step + 1e-9) * step
+
+
+def format_step(value: float, step: float) -> str:
+    """Rounds DOWN to step and renders an exact fixed-point API string.
+
+    Floats must never be f-string-formatted into API parameters: arithmetic
+    residue ("2.6750000000000003") triggers Binance error -1111 and small
+    steps render as scientific notation ("1e-05"). Decimal quantization
+    yields exact strings like "2.675" / "0.00001".
+    """
+    if step <= 0:
+        raise ValueError("step must be positive")
+    d_step = decimal.Decimal(f"{step:.12f}").normalize()
+    units = int((decimal.Decimal(str(value)) / d_step)
+                .quantize(decimal.Decimal("1e-9")) + decimal.Decimal("1e-9"))
+    return format(units * d_step, "f")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -236,17 +264,28 @@ class LiveExecutor:
         self._us = us_symbol
         self._policy = policy or ChasePolicy()
         self._on_event = on_event or (lambda msg: None)
-        self._steps: Dict[str, float] = {}
+        self._filters: Dict[str, tuple] = {}
 
     def _step(self, symbol: str) -> float:
-        if symbol not in self._steps:
-            self._steps[symbol] = self._client.step_size(symbol)
-        return self._steps[symbol]
+        return float(self._filters_for(symbol)[0])
+
+    def _filters_for(self, symbol: str) -> tuple:
+        if symbol not in self._filters:
+            self._filters[symbol] = self._client.symbol_filters(symbol)
+        return self._filters[symbol]
+
+    def _fmt_qty(self, symbol: str, qty: float) -> str:
+        return format_step(qty, float(self._filters_for(symbol)[0]))
+
+    def _fmt_price(self, symbol: str, price: float) -> str:
+        return format_step(price, float(self._filters_for(symbol)[1]))
 
     def _market(self, symbol: str, side: str, qty: float,
                 purpose: str) -> LegFill:
         client_id = f"tp-{purpose}-{uuid.uuid4().hex[:10]}"
-        resp = self._client.market_order(symbol, side, qty, client_id)
+        resp = self._client.market_order(symbol, side,
+                                         self._fmt_qty(symbol, qty),
+                                         client_id)
         price = float(resp.get("avgPrice") or 0.0) or float(
             resp.get("price") or 0.0)
         return LegFill(symbol, side, float(resp.get("executedQty") or qty),
@@ -290,8 +329,9 @@ class LiveExecutor:
             price = bid if side == "BUY" else ask
             client_id = f"tp-{purpose}-{uuid.uuid4().hex[:10]}"
             try:
-                self._client.limit_order_post_only(symbol, side, remaining,
-                                                   price, client_id)
+                self._client.limit_order_post_only(
+                    symbol, side, self._fmt_qty(symbol, remaining),
+                    self._fmt_price(symbol, price), client_id)
             except Exception:  # noqa: BLE001 — GTX reject: book moved; re-peg
                 continue
             last_id = client_id

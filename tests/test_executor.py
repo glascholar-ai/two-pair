@@ -6,7 +6,16 @@ from typing import Dict, List, Optional
 import pytest
 
 from twopair.executor import (BinanceClient, ChasePolicy,
-                              LiveExecutor, round_step)
+                              LiveExecutor, format_step, round_step)
+
+
+def _is_exact_decimal(s: str) -> bool:
+    """API-boundary contract: plain decimal, <=9 digits after the point."""
+    if "e" in s.lower():
+        return False
+    frac = s.split(".")[1] if "." in s else ""
+    return len(frac) <= 9
+
 
 FAST = ChasePolicy(style="bbo", chase_interval_seconds=0.01, max_chases=3,
                    fill_poll_seconds=0.001)
@@ -58,38 +67,43 @@ class _FakeClient(BinanceClient):
         self.positions: Dict[str, float] = {}
         self._working: Dict[str, dict] = {}
 
-    def market_order(self, symbol: str, side: str, qty: float,
+    def market_order(self, symbol: str, side: str, qty: str,
                      client_id: str) -> dict:
+        assert _is_exact_decimal(qty), f"dirty qty string: {qty!r}"
         if symbol in self.fail:
             raise ConnectionError(f"simulated reject for {symbol}")
-        self.orders.append({"symbol": symbol, "side": side, "qty": qty,
+        fqty = float(qty)
+        self.orders.append({"symbol": symbol, "side": side, "qty": fqty,
                             "type": "MARKET"})
         self.market_calls.append(self.orders[-1])
-        delta = qty if side == "BUY" else -qty
+        delta = fqty if side == "BUY" else -fqty
         self.positions[symbol] = self.positions.get(symbol, 0.0) + delta
         return {"orderId": len(self.orders), "executedQty": qty,
                 "avgPrice": 100.5}
 
-    def limit_order_post_only(self, symbol: str, side: str, qty: float,
-                              price: float, client_id: str) -> dict:
+    def limit_order_post_only(self, symbol: str, side: str, qty: str,
+                              price: str, client_id: str) -> dict:
+        assert _is_exact_decimal(qty), f"dirty qty string: {qty!r}"
+        assert _is_exact_decimal(price), f"dirty price string: {price!r}"
         if symbol in self.fail:
             raise ConnectionError(f"simulated reject for {symbol}")
         plan = self.limit_plan.get(symbol, ["fill"])
         behavior = plan.pop(0) if plan else "fill"
         if behavior == "gtx_reject":
             raise ConnectionError("Order would immediately match and take")
-        self.orders.append({"symbol": symbol, "side": side, "qty": qty,
-                            "type": "LIMIT", "price": price})
+        fqty, fprice = float(qty), float(price)
+        self.orders.append({"symbol": symbol, "side": side, "qty": fqty,
+                            "type": "LIMIT", "price": fprice})
         filled = 0.0
         if behavior == "fill":
-            filled = qty
+            filled = fqty
         elif isinstance(behavior, tuple) and behavior[0] == "partial":
-            filled = qty * behavior[1]
+            filled = fqty * behavior[1]
         delta = filled if side == "BUY" else -filled
         self.positions[symbol] = self.positions.get(symbol, 0.0) + delta
         self._working[client_id] = {
-            "status": "FILLED" if filled == qty else "PARTIALLY_FILLED",
-            "executedQty": filled, "avgPrice": price,
+            "status": "FILLED" if filled == fqty else "PARTIALLY_FILLED",
+            "executedQty": filled, "avgPrice": fprice,
             "orderId": len(self.orders)}
         return {"orderId": len(self.orders)}
 
@@ -109,8 +123,8 @@ class _FakeClient(BinanceClient):
     def position_amt(self, symbol: str) -> float:
         return self.positions.get(symbol, 0.0)
 
-    def step_size(self, symbol: str) -> float:
-        return 0.001
+    def symbol_filters(self, symbol: str) -> tuple:
+        return 0.001, 0.01
 
 
 class TestLiveExecutorRepair:
@@ -198,3 +212,22 @@ class TestBboChase:
         res = ex.open_ratio(1, 1100.0, 145.0)
         assert res.ok
         assert client.market_calls == []
+
+
+class TestFormatStep:
+    def test_cleans_float_residue(self) -> None:
+        assert format_step(2.675, 0.001) == "2.675"
+        assert format_step(9.13, 0.001) == "9.130"
+        assert format_step(0.1 + 0.2, 0.1) == "0.3"
+
+    def test_no_scientific_notation(self) -> None:
+        assert format_step(3.0, 0.00001) == "3.00000"
+        assert "e" not in format_step(0.00012, 0.00001).lower()
+
+    def test_rounds_down(self) -> None:
+        assert format_step(0.8999999, 0.001) == "0.899"
+        assert format_step(1.1218181818, 0.01) == "1.12"
+
+    def test_bad_step_raises(self) -> None:
+        with pytest.raises(ValueError):
+            format_step(1.0, 0.0)
