@@ -290,3 +290,40 @@ class TestPortfolioMarginRouting:
         ex = LiveExecutor(c, 1000.0, "KR", "US")
         ex.arm_deadman(900)
         assert c.calls == []          # skipped entirely, no papi 404 spam
+
+
+class _LaggyClient(_FakeClient):
+    """Simulates papi read-after-write lag: first N queries 400."""
+
+    def __init__(self, lag_queries: int, **kw) -> None:
+        super().__init__(**kw)
+        self._lag = lag_queries
+
+    def query_order(self, symbol: str, client_id: str) -> dict:
+        if self._lag > 0:
+            self._lag -= 1
+            raise ConnectionError("HTTP 400: order does not exist (lag)")
+        return super().query_order(symbol, client_id)
+
+
+class TestPapiLagTolerance:
+    def test_await_fill_survives_laggy_queries(self) -> None:
+        client = _LaggyClient(2, limit_plan={"KR": ["fill"], "US": ["fill"]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert res.ok and len(res.fills) == 2
+        assert client.market_calls == []   # passive fill despite lag
+
+    def test_market_ack_with_zero_executed_qty(self) -> None:
+        class _ZeroAck(_FakeClient):
+            def market_order(self, symbol, side, qty, client_id):  # type: ignore[override]
+                resp = super().market_order(symbol, side, qty, client_id)
+                resp["executedQty"] = "0.00"   # papi async-fill ack
+                return resp
+
+        client = _ZeroAck()
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=MARKET)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert res.ok
+        for fill in res.fills:
+            assert fill.qty > 0                # requested qty, not 0.00

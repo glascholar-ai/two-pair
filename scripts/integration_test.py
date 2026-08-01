@@ -41,6 +41,26 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     print(f"  [{PASS if ok else FAIL}] {name}" + (f" — {detail}" if detail else ""))
 
 
+def wait_status(client: BinanceClient, symbol: str, client_id: str,
+                target: str, timeout: float = 6.0) -> str:
+    """Polls an order until it reaches `target` status or times out.
+
+    papi has read-after-write lag: immediate queries can 400 or return a
+    stale status for ~1s after any mutation.
+    """
+    deadline = time.time() + timeout
+    status = "?"
+    while time.time() < deadline:
+        try:
+            status = str(client.query_order(symbol, client_id).get("status"))
+            if status == target:
+                return status
+        except Exception:  # noqa: BLE001 — propagation lag
+            status = "unqueryable"
+        time.sleep(0.5)
+    return status
+
+
 def far_limit_roundtrip(client: BinanceClient, symbol: str) -> None:
     """Places an unfillable post-only order, verifies it rests, cancels."""
     bid, _ask = client.book_ticker(symbol)
@@ -49,13 +69,13 @@ def far_limit_roundtrip(client: BinanceClient, symbol: str) -> None:
     qty = format_step(max(60.0, 25.0) / bid, step)
     client_id = f"itest-{symbol[:4].lower()}-{int(time.time())}"
     client.limit_order_post_only(symbol, "BUY", qty, price, client_id)
-    order = client.query_order(symbol, client_id)
-    check(f"{symbol} far limit rests", order.get("status") == "NEW",
-          f"qty={qty} price={price} status={order.get('status')}")
+    status = wait_status(client, symbol, client_id, "NEW")
+    check(f"{symbol} far limit rests", status == "NEW",
+          f"qty={qty} price={price} status={status}")
     client.cancel_order(symbol, client_id)
-    order = client.query_order(symbol, client_id)
-    check(f"{symbol} cancel confirmed", order.get("status") == "CANCELED",
-          f"status={order.get('status')}")
+    status = wait_status(client, symbol, client_id, "CANCELED")
+    check(f"{symbol} cancel confirmed", status == "CANCELED",
+          f"status={status}")
 
 
 def cancel_all_test(client: BinanceClient, symbol: str) -> None:
@@ -70,7 +90,7 @@ def cancel_all_test(client: BinanceClient, symbol: str) -> None:
         client.limit_order_post_only(symbol, "BUY", qty, price, client_id)
         ids.append(client_id)
     client.cancel_all_open(symbol)
-    statuses = [client.query_order(symbol, cid).get("status") for cid in ids]
+    statuses = [wait_status(client, symbol, cid, "CANCELED") for cid in ids]
     check(f"{symbol} cancel_all clears both",
           all(s == "CANCELED" for s in statuses), f"statuses={statuses}")
 
@@ -95,7 +115,7 @@ def round_trip_test(executor: LiveExecutor, client: BinanceClient,
           f"kr={view.kr_qty} us={view.us_qty} pnl={view.pnl_pct:+.3f}%")
     result = executor.close_all(kr_bid, us_bid)
     check("close_all ok", result.ok, f"err={result.error}")
-    time.sleep(2)
+    time.sleep(3)
     view = executor.position_view(None)
     check("flat after close", flat(view.kr_qty, view.us_qty),
           f"kr={view.kr_qty} us={view.us_qty}")

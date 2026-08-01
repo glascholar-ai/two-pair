@@ -317,16 +317,31 @@ class LiveExecutor:
                                          client_id)
         price = float(resp.get("avgPrice") or 0.0) or float(
             resp.get("price") or 0.0)
-        return LegFill(symbol, side, float(resp.get("executedQty") or qty),
-                       price, str(resp.get("orderId", client_id)))
+        # papi acks market orders before the fill lands: executedQty can be
+        # "0.00" here — fall back to the requested qty so repair/close logic
+        # never operates on a zero quantity.
+        filled = float(resp.get("executedQty") or 0.0) or qty
+        return LegFill(symbol, side, filled, price,
+                       str(resp.get("orderId", client_id)))
 
     def _await_fill(self, symbol: str, client_id: str,
                     deadline: float) -> dict:
-        """Polls an order until FILLED or the deadline passes."""
+        """Polls an order until FILLED or the deadline passes.
+
+        Query errors are tolerated and retried: papi acknowledges an order
+        before it is queryable, so an immediate query can 400 with
+        "order does not exist" while the order is live (and filling).
+        """
+        last: dict = {}
         while True:
-            order = self._client.query_order(symbol, client_id)
-            if order.get("status") == "FILLED" or time.time() >= deadline:
-                return order
+            try:
+                last = self._client.query_order(symbol, client_id)
+                if last.get("status") == "FILLED":
+                    return last
+            except Exception:  # noqa: BLE001 — read-after-write lag
+                pass
+            if time.time() >= deadline:
+                return last
             time.sleep(self._policy.fill_poll_seconds)
 
     def _reap(self, symbol: str, client_id: str) -> tuple:
@@ -335,10 +350,16 @@ class LiveExecutor:
         A cancel that races a fill ("order does not exist" / already FILLED)
         is resolved by querying final state.
         """
+        order: dict = {}
         try:
             order = self._client.cancel_order(symbol, client_id)
-        except Exception:  # noqa: BLE001 — cancel/fill race
-            order = self._client.query_order(symbol, client_id)
+        except Exception:  # noqa: BLE001 — cancel/fill race or papi lag
+            for _ in range(4):
+                try:
+                    order = self._client.query_order(symbol, client_id)
+                    break
+                except Exception:  # noqa: BLE001
+                    time.sleep(self._policy.fill_poll_seconds)
         qty = float(order.get("executedQty") or 0.0)
         price = float(order.get("avgPrice") or 0.0)
         return qty, price
