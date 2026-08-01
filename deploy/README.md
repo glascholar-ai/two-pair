@@ -2,7 +2,7 @@
 
 前置(已完成的):静态外部 IP + 币安 API key IP 白名单;VM 附加服务账号
 `two-pair-server@glascholar.iam.gserviceaccount.com`,access scope 为
-"Allow full access to all Cloud APIs";区域 secret(asia-northeast1):
+"Allow full access to all Cloud APIs";全局 secret:
 `binance-t32-apikey`、`binance-t32-secret-key`,SA 已授 secretAccessor。
 
 ## 安装步骤

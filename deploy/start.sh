@@ -10,7 +10,6 @@
 set -euo pipefail
 
 PROJECT="glascholar"
-LOCATION="asia-northeast1"
 SECRET_API_KEY="binance-t32-apikey"
 SECRET_API_SECRET="binance-t32-secret-key"
 # Optional: set to a secret name to enable Telegram notifications.
@@ -21,7 +20,7 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 fetch_secret() {
     gcloud secrets versions access latest \
-        --secret="$1" --location="$LOCATION" --project="$PROJECT"
+        --secret="$1" --project="$PROJECT"
 }
 
 BINANCE_API_KEY="$(fetch_secret "$SECRET_API_KEY")"
