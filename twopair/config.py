@@ -65,6 +65,9 @@ class Config:
     db_path: str = "data/journal.sqlite"
     poll_grace_seconds: int = 10         # wait after bar close before fetching
     binance_base: str = "https://fapi.binance.com"
+    portfolio_margin: bool = False       # account uses Binance Portfolio
+                                         # Margin: signed calls go to papi
+                                         # /papi/v1/um/* endpoints
     telegram_token: str = ""
     telegram_chat_id: str = ""
 

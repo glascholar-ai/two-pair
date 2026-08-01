@@ -231,3 +231,62 @@ class TestFormatStep:
     def test_bad_step_raises(self) -> None:
         with pytest.raises(ValueError):
             format_step(1.0, 0.0)
+
+
+class _RouteRecorder(BinanceClient):
+    """Captures (method, path, signed) without any network I/O."""
+
+    def __init__(self, pm: bool) -> None:
+        super().__init__("k", "s", pm=pm)
+        self.calls: list = []
+
+    def request(self, method: str, path: str,
+                params=None, signed: bool = False) -> dict:
+        self.calls.append((method, path, signed))
+        return {}
+
+
+class TestPortfolioMarginRouting:
+    def test_classic_paths(self) -> None:
+        c = _RouteRecorder(pm=False)
+        c.market_order("S", "BUY", "1", "id")
+        c.cancel_all_open("S")
+        c.income_sum("S", "FUNDING_FEE", 0)
+        paths = [p for _, p, _ in c.calls]
+        assert paths == ["/fapi/v1/order", "/fapi/v1/allOpenOrders",
+                        "/fapi/v1/income"]
+        assert c.supports_countdown is True
+
+    def test_pm_paths(self) -> None:
+        c = _RouteRecorder(pm=True)
+        c.market_order("S", "BUY", "1", "id")
+        c.limit_order_post_only("S", "SELL", "1", "9.9", "id2")
+        c.cancel_order("S", "id2")
+        c.query_order("S", "id2")
+        c.cancel_all_open("S")
+        c.position_amt("S")
+        c.position_risk_all()
+        c.income_sum("S", "FUNDING_FEE", 0)
+        c.user_trades("S", 0)
+        paths = [p for _, p, _ in c.calls]
+        assert paths == [
+            "/papi/v1/um/order", "/papi/v1/um/order", "/papi/v1/um/order",
+            "/papi/v1/um/order", "/papi/v1/um/allOpenOrders",
+            "/papi/v1/um/positionRisk", "/papi/v1/um/positionRisk",
+            "/papi/v1/um/income", "/papi/v1/um/userTrades"]
+        assert c.supports_countdown is False
+
+    def test_pm_public_data_stays_on_fapi(self) -> None:
+        c = _RouteRecorder(pm=True)
+        try:
+            c.book_ticker("S")   # request stubbed -> KeyError on parse is fine
+        except KeyError:
+            pass
+        _, path, signed = c.calls[-1]
+        assert path == "/fapi/v1/ticker/bookTicker" and signed is False
+
+    def test_deadman_noop_on_pm(self) -> None:
+        c = _RouteRecorder(pm=True)
+        ex = LiveExecutor(c, 1000.0, "KR", "US")
+        ex.arm_deadman(900)
+        assert c.calls == []          # skipped entirely, no papi 404 spam

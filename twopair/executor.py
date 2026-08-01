@@ -58,14 +58,32 @@ class PairView:
     pnl_pct: float
 
 
+PAPI_BASE = "https://papi.binance.com"
+
+
 class BinanceClient:
-    """Minimal signed REST client for Binance USDT-M futures."""
+    """Minimal signed REST client for Binance USDT-M futures.
+
+    With pm=True (Portfolio Margin unified account) signed trade/account
+    calls are routed to papi.binance.com /papi/v1/um/* endpoints; public
+    market data stays on the fapi base in both modes.
+    """
 
     def __init__(self, api_key: str, api_secret: str,
-                 base: str = "https://fapi.binance.com") -> None:
+                 base: str = "https://fapi.binance.com",
+                 pm: bool = False) -> None:
         self._key = api_key
         self._secret = api_secret.encode()
         self._base = base
+        self._pm = pm
+
+    @property
+    def supports_countdown(self) -> bool:
+        """countdownCancelAll exists on fapi only (papi returns 404)."""
+        return not self._pm
+
+    def _p(self, fapi_path: str, papi_path: str) -> str:
+        return papi_path if self._pm else fapi_path
 
     def sign(self, params: Dict[str, str]) -> str:
         """Returns the signed query string for the given params."""
@@ -89,7 +107,8 @@ class BinanceClient:
             query = self.sign(params)
         else:
             query = urllib.parse.urlencode(params)
-        url = f"{self._base}{path}"
+        base = PAPI_BASE if (self._pm and signed) else self._base
+        url = f"{base}{path}"
         data: Optional[bytes] = None
         if method == "GET":
             url = f"{url}?{query}" if query else url
@@ -104,7 +123,8 @@ class BinanceClient:
     def market_order(self, symbol: str, side: str, qty: str,
                      client_id: str) -> dict:
         """Places a MARKET order (qty must be an exact decimal string)."""
-        return self.request("POST", "/fapi/v1/order", {
+        return self.request("POST", self._p("/fapi/v1/order",
+                                            "/papi/v1/um/order"), {
             "symbol": symbol, "side": side, "type": "MARKET",
             "quantity": qty, "newClientOrderId": client_id,
         }, signed=True)
@@ -117,7 +137,8 @@ class BinanceClient:
         rejected by the exchange if it would cross the book, which is
         exactly what we want: the order either joins the queue or fails fast.
         """
-        return self.request("POST", "/fapi/v1/order", {
+        return self.request("POST", self._p("/fapi/v1/order",
+                                            "/papi/v1/um/order"), {
             "symbol": symbol, "side": side, "type": "LIMIT",
             "timeInForce": "GTX", "quantity": qty, "price": price,
             "newClientOrderId": client_id,
@@ -125,19 +146,22 @@ class BinanceClient:
 
     def cancel_order(self, symbol: str, client_id: str) -> dict:
         """Cancels an order by client id; returns the exchange response."""
-        return self.request("DELETE", "/fapi/v1/order", {
+        return self.request("DELETE", self._p("/fapi/v1/order",
+                                              "/papi/v1/um/order"), {
             "symbol": symbol, "origClientOrderId": client_id,
         }, signed=True)
 
     def query_order(self, symbol: str, client_id: str) -> dict:
         """Fetches order state (status / executedQty / avgPrice)."""
-        return self.request("GET", "/fapi/v1/order", {
+        return self.request("GET", self._p("/fapi/v1/order",
+                                           "/papi/v1/um/order"), {
             "symbol": symbol, "origClientOrderId": client_id,
         }, signed=True)
 
     def cancel_all_open(self, symbol: str) -> dict:
         """Cancels ALL open orders for a symbol."""
-        return self.request("DELETE", "/fapi/v1/allOpenOrders",
+        return self.request("DELETE", self._p("/fapi/v1/allOpenOrders",
+                                              "/papi/v1/um/allOpenOrders"),
                             {"symbol": symbol}, signed=True)
 
     def countdown_cancel_all(self, symbol: str, countdown_ms: int) -> dict:
@@ -158,19 +182,23 @@ class BinanceClient:
 
     def position_amt(self, symbol: str) -> float:
         """Returns the signed position amount for a symbol."""
-        rows = self.request("GET", "/fapi/v2/positionRisk",
+        rows = self.request("GET", self._p("/fapi/v2/positionRisk",
+                                           "/papi/v1/um/positionRisk"),
                             {"symbol": symbol}, signed=True)
         return float(rows[0]["positionAmt"]) if rows else 0.0
 
     def position_risk_all(self) -> List[dict]:
         """Returns positionRisk rows for all symbols (single call)."""
-        rows = self.request("GET", "/fapi/v2/positionRisk", {}, signed=True)
+        rows = self.request("GET", self._p("/fapi/v2/positionRisk",
+                                           "/papi/v1/um/positionRisk"),
+                            {}, signed=True)
         return list(rows) if isinstance(rows, list) else []
 
     def income_sum(self, symbol: str, income_type: str,
                    start_ms: int) -> float:
         """Sums one income type for a symbol since start_ms (USDT)."""
-        rows = self.request("GET", "/fapi/v1/income", {
+        rows = self.request("GET", self._p("/fapi/v1/income",
+                                           "/papi/v1/um/income"), {
             "symbol": symbol, "incomeType": income_type,
             "startTime": str(start_ms), "limit": "1000",
         }, signed=True)
@@ -184,7 +212,8 @@ class BinanceClient:
 
     def user_trades(self, symbol: str, start_ms: int) -> List[dict]:
         """Returns account fills for a symbol since start_ms."""
-        rows = self.request("GET", "/fapi/v1/userTrades", {
+        rows = self.request("GET", self._p("/fapi/v1/userTrades",
+                                           "/papi/v1/um/userTrades"), {
             "symbol": symbol, "startTime": str(start_ms), "limit": "1000",
         }, signed=True)
         return list(rows) if isinstance(rows, list) else []
@@ -421,7 +450,10 @@ class LiveExecutor:
 
         Call once per cycle; if the process dies, the exchange cancels any
         resting orders after `seconds`. Failures are reported, not raised.
+        No-op on Portfolio Margin (papi has no countdownCancelAll).
         """
+        if not getattr(self._client, "supports_countdown", True):
+            return
         for symbol in (self._kr, self._us):
             try:
                 self._client.countdown_cancel_all(symbol, seconds * 1000)

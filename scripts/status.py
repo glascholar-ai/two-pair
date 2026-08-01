@@ -66,7 +66,8 @@ def exchange_section(cfg: Config) -> None:
     if not key or not secret:
         print("exchange : (no API keys in env — journal view only)")
         return
-    client = BinanceClient(key, secret, cfg.binance_base)
+    client = BinanceClient(key, secret, cfg.binance_base,
+                           pm=cfg.portfolio_margin)
     executor = LiveExecutor(client, cfg.leg_notional_usdt, cfg.kr_symbol,
                             cfg.us_symbol)
     entry_ts: Optional[dt.datetime] = None

@@ -34,7 +34,8 @@ def build_executor(cfg: Config, notifier: Notifier) -> LiveExecutor:
     if not key or not secret:
         raise SystemExit("set BINANCE_API_KEY / BINANCE_API_SECRET "
                          "(testnet keys for --testnet)")
-    client = BinanceClient(key, secret, cfg.binance_base)
+    client = BinanceClient(key, secret, cfg.binance_base,
+                           pm=cfg.portfolio_margin)
     policy = ChasePolicy(style=cfg.order_style,
                          chase_interval_seconds=cfg.chase_interval_seconds,
                          max_chases=cfg.max_chases,
