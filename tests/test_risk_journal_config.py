@@ -21,11 +21,13 @@ MONDAY = dt.datetime(2026, 7, 6, 2, 0, tzinfo=UTC)
 class TestConfig:
     def test_defaults_valid(self) -> None:
         cfg = Config()
-        assert cfg.z_in == 2.0 and cfg.mode == "paper"
+        assert cfg.z_in == 2.0 and cfg.mode_label() == "live"
 
-    def test_bad_mode(self) -> None:
-        with pytest.raises(ValueError):
-            Config(mode="yolo")
+    def test_mode_label(self) -> None:
+        assert Config().mode_label() == "live"
+        assert Config(
+            binance_base="https://testnet.binancefuture.com"
+        ).mode_label() == "testnet"
 
     def test_bad_thresholds(self) -> None:
         with pytest.raises(ValueError):

@@ -6,7 +6,7 @@ from typing import List
 
 import pytest
 
-from twopair.executor import LiveExecutor, PairView, PaperExecutor
+from twopair.executor import LiveExecutor, PairView
 from twopair.live import SyncAction, classify_sync
 from twopair.strategy import Strategy
 from twopair.config import Config
@@ -140,10 +140,6 @@ class _ViewClient:
 
 
 class TestPositionView:
-    def test_paper_returns_none(self) -> None:
-        ex = PaperExecutor(1000.0, "KR", "US")
-        assert ex.position_view(None) is None
-
     def test_live_combines_unrealized_and_funding(self) -> None:
         rows = [
             {"symbol": "KR", "positionAmt": "0.9", "unRealizedProfit": "-12.0"},

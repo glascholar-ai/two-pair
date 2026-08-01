@@ -1,15 +1,19 @@
-"""Live/paper trading loop.
+"""Live trading loop (prod or Binance testnet).
 
 Synchronous 5-minute polling — deliberately simple. Each cycle:
   1. sleep to the next bar boundary (+grace), fetch the just-closed bar
      for both legs and the latest FX;
-  2. push the bar through SignalEngine + Strategy (identical code to the
-     backtest);
-  3. act on the Decision via the Executor, consult RiskGuard for entries;
-  4. journal everything, notify on trades/alerts/errors.
+  2. sync position state with the exchange (source of truth: positionRisk
+     + funding income; see classify_sync);
+  3. push the bar through SignalEngine + Strategy (identical signal path to
+     the backtest);
+  4. act on the Decision via the executor, consult RiskGuard for entries;
+  5. journal everything, notify on trades/alerts/errors.
 
-Warmup replays recent history through the engine before the first live bar,
-so the strategy starts with full windows.
+There is no local paper mode: use the Binance testnet (system rehearsal;
+our symbols may be absent there) or prod with a tiny leg notional
+(strategy rehearsal) instead. Position MTM comes solely from the exchange
+sync; the loop never accrues PnL locally.
 """
 from __future__ import annotations
 
@@ -22,7 +26,7 @@ import pandas as pd
 
 from twopair import data as datamod
 from twopair.config import Config
-from twopair.executor import Executor, PairView
+from twopair.executor import LiveExecutor, PairView
 from twopair.journal import Journal
 from twopair.notify import Notifier
 from twopair.risk import RiskGuard
@@ -92,7 +96,7 @@ def classify_sync(view: PairView, kr_price: float, us_price: float,
 class LiveApp:
     """Owns the polling loop and wires all components together."""
 
-    def __init__(self, cfg: Config, executor: Executor, journal: Journal,
+    def __init__(self, cfg: Config, executor: LiveExecutor, journal: Journal,
                  notifier: Notifier) -> None:
         self._cfg = cfg
         self._exec = executor
@@ -102,9 +106,6 @@ class LiveApp:
                                     cfg.min_sd)
         self._strategy = Strategy(cfg)
         self._guard = RiskGuard(cfg)
-        self._funding_kr = pd.Series(dtype=float)
-        self._funding_us = pd.Series(dtype=float)
-        self._prev_lr: Optional[float] = None
         self._prev_ts: Optional[dt.datetime] = None
         self._last_fx: Optional[float] = None
         self._fx_ts: Optional[dt.datetime] = None
@@ -122,15 +123,14 @@ class LiveApp:
         pair = datamod.build_pair_dataset(kr, us, fx)
         # Drop the final row: its bar may still be forming.
         pair = pair.iloc[:-1]
-        self._refresh_funding(start_ms)
         kr_col = pair["kr"].to_numpy(dtype=float)
         us_col = pair["us"].to_numpy(dtype=float)
         fx_col = pair["fx"].to_numpy(dtype=float)
         for i, raw_ts in enumerate(pair.index):
             ts = cast(dt.datetime, raw_ts)
-            sig = self._engine.update(Bar(ts=ts, kr=kr_col[i], us=us_col[i],
-                                          fx=fx_col[i]))
-            self._prev_ts, self._prev_lr = ts, sig.lr
+            self._engine.update(Bar(ts=ts, kr=kr_col[i], us=us_col[i],
+                                    fx=fx_col[i]))
+            self._prev_ts = ts
         self._last_fx = float(fx_col[-1])
         self._fx_ts = cast(dt.datetime, pair.index[-1])
         logger.info("warmup done: %d bars to %s", len(pair), self._prev_ts)
@@ -146,11 +146,11 @@ class LiveApp:
         cfg = self._cfg
         now = _utcnow()
         today_pnl = self._journal.realized_pnl_on_day(
-            now.date().isoformat(), cfg.mode)
+            now.date().isoformat(), cfg.mode_label())
         if today_pnl != 0.0:
             self._guard.record_trade_pnl(now, today_pnl)
             logger.info("recovered daily realized PnL %+.2f%%", today_pnl)
-        last = self._journal.last_trade(cfg.mode)
+        last = self._journal.last_trade(cfg.mode_label())
         if last is not None and last[1] == "stop":
             exit_ts = dt.datetime.fromisoformat(last[0])
             age_h = (now - exit_ts).total_seconds() / 3600.0
@@ -158,17 +158,10 @@ class LiveApp:
                 self._strategy.set_rearm(True)
                 logger.info("re-arm latch restored (stop %.1fh ago)", age_h)
 
-    def _refresh_funding(self, start_ms: int) -> None:
-        cfg = self._cfg
-        self._funding_kr = datamod.fetch_funding(cfg.kr_symbol, start_ms,
-                                                 cfg.binance_base)
-        self._funding_us = datamod.fetch_funding(cfg.us_symbol, start_ms,
-                                                 cfg.binance_base)
-
     # ------------------------------------------------------------------- loop
     def run_forever(self) -> None:
         """Blocks, processing one bar per cycle. Ctrl-C to stop."""
-        self._notify.send(f"twopair {self._cfg.mode} loop starting")
+        self._notify.send(f"twopair {self._cfg.mode_label()} loop starting")
         while True:
             self._sleep_to_next_bar()
             try:
@@ -189,29 +182,14 @@ class LiveApp:
         bar = self._fetch_latest_bar()
         if bar is None:
             return
-        synced = self._sync_position(bar)
-        funding_start = int((bar.ts - dt.timedelta(hours=2)).timestamp() * 1000)
-        self._refresh_funding(min(
-            funding_start,
-            int((self._prev_ts or bar.ts).timestamp() * 1000)))
+        self._sync_position(bar)
         sig = self._engine.update(bar)
-
-        # When the exchange view is authoritative (live, sync succeeded) the
-        # MTM was just overwritten with real-money truth — pass zero deltas so
-        # local accrual does not double-count. Paper keeps backtest-identical
-        # local accrual.
-        dlr = 0.0
-        funding_pct = 0.0
-        prev_ts, prev_lr = self._prev_ts, self._prev_lr
-        if (not synced and self._strategy.position is not None
-                and prev_lr is not None and prev_ts is not None):
-            dlr = sig.lr - prev_lr
-            kr_f = datamod.funding_between(self._funding_kr, prev_ts, bar.ts)
-            us_f = datamod.funding_between(self._funding_us, prev_ts, bar.ts)
-            funding_pct = (-kr_f + us_f) * 100.0
-        decision = self._strategy.on_bar(sig, dlr, funding_pct)
+        # MTM comes exclusively from the exchange sync (real-money truth,
+        # funding included via income). Local deltas are always zero; if a
+        # sync fetch fails the MTM is simply one bar stale.
+        decision = self._strategy.on_bar(sig, 0.0, 0.0)
         self._journal.record_bar(sig, bar.kr, bar.us, bar.fx)
-        self._prev_ts, self._prev_lr = bar.ts, sig.lr
+        self._prev_ts = bar.ts
 
         if decision.z_alert:
             msg = f"|z| alert: z={sig.z:.2f} at {sig.ts}"
@@ -226,9 +204,8 @@ class LiveApp:
     def _sync_position(self, bar: Bar) -> bool:
         """Reconciles local position state with the exchange (plan A).
 
-        Returns True when exchange truth was applied (live mode, view read
-        successfully); False when local state remains authoritative (paper
-        mode or view fetch failure).
+        Returns True when exchange truth was applied; False when the view
+        fetch failed (MTM then stays one bar stale).
         """
         pos = self._strategy.position
         entry_ts = pos.entry_ts if pos is not None else None
@@ -237,8 +214,6 @@ class LiveApp:
         except Exception as err:  # noqa: BLE001 — sync must not kill the loop
             self._journal.record_event(bar.ts, "WARN",
                                        f"position sync failed: {err}")
-            return False
-        if view is None:
             return False
         local_side = pos.side if pos is not None else 0
         action, side, detail = classify_sync(
@@ -325,7 +300,7 @@ class LiveApp:
         trade = decision.trade
         if trade is None:  # unreachable on a CLOSE decision; keep types honest
             return
-        self._journal.record_trade(trade, self._cfg.mode)
+        self._journal.record_trade(trade, self._cfg.mode_label())
         self._guard.record_trade_pnl(trade.exit_ts, trade.pnl_pct)
         status = "" if result.ok else f" (EXEC ERROR: {result.error})"
         self._notify.send(

@@ -57,71 +57,6 @@ class PairView:
     pnl_pct: float
 
 
-class Executor:
-    """Interface: open or close the ratio position with equal leg notionals."""
-
-    def open_ratio(self, side: int, kr_price: float,
-                   us_price: float) -> PairExecution:
-        """Opens side=+1 (long KR / short US) or side=-1 (reverse)."""
-        raise NotImplementedError
-
-    def close_all(self, kr_price: float, us_price: float) -> PairExecution:
-        """Flattens both legs of the currently held position."""
-        raise NotImplementedError
-
-    def position_view(self,
-                      entry_ts: Optional[dt.datetime]) -> Optional[PairView]:
-        """Reads exchange truth for the pair.
-
-        Returns None when no external source of truth exists (paper mode);
-        the caller must then trust its local state.
-        """
-        raise NotImplementedError
-
-
-class PaperExecutor(Executor):
-    """Fills instantly at the provided reference prices."""
-
-    def __init__(self, leg_notional_usdt: float, kr_symbol: str,
-                 us_symbol: str) -> None:
-        self._notional = leg_notional_usdt
-        self._kr = kr_symbol
-        self._us = us_symbol
-        self._open: Dict[str, LegFill] = {}
-
-    def open_ratio(self, side: int, kr_price: float,
-                   us_price: float) -> PairExecution:
-        if self._open:
-            return PairExecution(False, [], "position already open")
-        kr_side = "BUY" if side > 0 else "SELL"
-        us_side = "SELL" if side > 0 else "BUY"
-        fills = [
-            LegFill(self._kr, kr_side, self._notional / kr_price, kr_price,
-                    f"paper-{uuid.uuid4().hex[:8]}"),
-            LegFill(self._us, us_side, self._notional / us_price, us_price,
-                    f"paper-{uuid.uuid4().hex[:8]}"),
-        ]
-        self._open = {f.symbol: f for f in fills}
-        return PairExecution(True, fills)
-
-    def close_all(self, kr_price: float, us_price: float) -> PairExecution:
-        if not self._open:
-            return PairExecution(True, [])
-        prices = {self._kr: kr_price, self._us: us_price}
-        fills = [
-            LegFill(f.symbol, "SELL" if f.side == "BUY" else "BUY", f.qty,
-                    prices[f.symbol], f"paper-{uuid.uuid4().hex[:8]}")
-            for f in self._open.values()
-        ]
-        self._open = {}
-        return PairExecution(True, fills)
-
-    def position_view(self,
-                      entry_ts: Optional[dt.datetime]) -> Optional[PairView]:
-        """Paper mode has no external truth; local state is authoritative."""
-        return None
-
-
 class BinanceClient:
     """Minimal signed REST client for Binance USDT-M futures."""
 
@@ -254,7 +189,7 @@ class ChasePolicy:
     fill_poll_seconds: float = 0.5
 
 
-class LiveExecutor(Executor):
+class LiveExecutor:
     """Two-leg execution on Binance with broken-leg repair.
 
     Legs are worked passively: a post-only limit joins the touch (BUY at
@@ -407,7 +342,7 @@ class LiveExecutor(Executor):
         return self._both(orders, "close")
 
     def position_view(self,
-                      entry_ts: Optional[dt.datetime]) -> Optional[PairView]:
+                      entry_ts: Optional[dt.datetime]) -> PairView:
         """Reads both legs and real-money PnL from the exchange.
 
         pnl_pct combines unRealizedProfit of both legs with FUNDING_FEE

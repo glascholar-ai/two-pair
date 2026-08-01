@@ -31,27 +31,33 @@ twopair/               策略库 —— 回测与实盘共用同一信号路径
   strategy.py          Strategy 状态机：进出场、MTM 止损、再武装、告警
   data.py              币安 klines/funding、Yahoo FX、数据集组装
   backtest.py          回测 runner（复用 SignalEngine + Strategy）
-  live.py              LiveApp：5 分钟轮询循环（warmup → step → 执行/风控/记录）
-  executor.py          PaperExecutor / LiveExecutor（双腿并发市价、断腿自动修复）
+  live.py              LiveApp：5 分钟轮询循环（warmup → 每轮交易所对账 → step）
+  executor.py          LiveExecutor（BBO 被动追单、断腿修复、positionRisk/income 对账视图）
   risk.py              RiskGuard：数据陈旧、日亏熔断、FX 跳空告警
   journal.py           SQLite：bars / trades / fills / events 全量落库
   notify.py            Telegram（未配置时降级为日志）
 pair_backtest.py       回测 CLI（--mtm-stop 覆盖；输出交易表+权益指标）
-run_live.py            实盘/模拟盘 CLI（默认 paper；--live 需 BINANCE_API_KEY/SECRET）
+run_live.py            实盘 CLI（--testnet 切币安测试网；需 BINANCE_API_KEY/SECRET）
+                       无自建 paper 模式：管线演练用 testnet（本策略 symbols 未上线,
+                       需换测试 symbols）；策略演练用生产环境 + 极小 leg_notional
 scripts/refresh_data.py  刷新 data/ 下的价格与 funding CSV
-tests/                 49 个测试：单元 + 平价（引擎 vs 独立 pandas 参考实现逐笔一致，
+tests/                 70 个测试：单元 + 对账矩阵 + 平价（引擎 vs 独立 pandas 参考实现逐笔一致，
                        并钉死基线数字：stop2.5→26笔/+16.51%，stop off→24笔/+20.05%）
 data/
   skhx_pair_5m.csv     5m 双腿价格 + USDKRW
   funding_kr.csv/us    两腿 funding 结算
-  journal.sqlite       模拟盘/实盘 journal（运行后生成）
+  journal.sqlite       实盘 journal（运行后生成）
 research/              前期调研存档（币安/HL 股票 perp funding 分析；相对路径未修正）
 ```
 
-运行:`python3 -m pytest tests/` · `python3 pair_backtest.py` · `python3 run_live.py`(paper)
+运行:`python3 -m pytest tests/` · `python3 pair_backtest.py` · `python3 run_live.py [--testnet]`
+
+状态恢复:仓位以交易所为唯一事实源,每轮(5 分钟)对账——重启恢复只是第 0 轮;
+journal 仅补充两个信号空间标量(当日已实现亏损、止损再武装锁存)。
+任何时刻 kill 进程,重启即恢复;孤腿/数量漂移/外部手动平仓均自动处理。
 
 ## 下一步
 
-1. paper 模式跑 2~4 周,积累样本外记录与时段标签(journal 里已带)
-2. 对账 paper vs 回测口径后,VPS(东京)+ systemd 部署,小仓位 live
+1. 生产环境 + 极小名义(如单腿 100 USDT)跑 2~4 周,积累样本外记录与时段标签
+2. 对账实盘 vs 回测口径后,VPS(东京)+ systemd 部署,逐步加到目标仓位
 3. 手续费恢复收费时重估单笔期望(约 −0.1%/笔)

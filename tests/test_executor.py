@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 import pytest
 
 from twopair.executor import (BinanceClient, ChasePolicy,
-                              LiveExecutor, PaperExecutor, round_step)
+                              LiveExecutor, round_step)
 
 FAST = ChasePolicy(style="bbo", chase_interval_seconds=0.01, max_chases=3,
                    fill_poll_seconds=0.001)
@@ -24,39 +24,6 @@ class TestRoundStep:
     def test_bad_step(self) -> None:
         with pytest.raises(ValueError):
             round_step(1.0, 0.0)
-
-
-class TestPaperExecutor:
-    def test_open_close_round_trip(self) -> None:
-        ex = PaperExecutor(1000.0, "KRUSDT", "USUSDT")
-        res = ex.open_ratio(1, kr_price=1100.0, us_price=145.0)
-        assert res.ok and len(res.fills) == 2
-        by_sym = {f.symbol: f for f in res.fills}
-        assert by_sym["KRUSDT"].side == "BUY"
-        assert by_sym["USUSDT"].side == "SELL"
-        # Equal notional legs.
-        assert by_sym["KRUSDT"].qty * 1100.0 == pytest.approx(1000.0)
-        assert by_sym["USUSDT"].qty * 145.0 == pytest.approx(1000.0)
-        res2 = ex.close_all(kr_price=1105.0, us_price=144.0)
-        assert res2.ok and len(res2.fills) == 2
-        assert {f.side for f in res2.fills} == {"BUY", "SELL"}
-
-    def test_double_open_rejected(self) -> None:
-        ex = PaperExecutor(1000.0, "A", "B")
-        assert ex.open_ratio(1, 1.0, 1.0).ok
-        assert not ex.open_ratio(1, 1.0, 1.0).ok
-
-    def test_close_when_flat_is_ok(self) -> None:
-        ex = PaperExecutor(1000.0, "A", "B")
-        res = ex.close_all(1.0, 1.0)
-        assert res.ok and res.fills == []
-
-    def test_short_ratio_sides(self) -> None:
-        ex = PaperExecutor(1000.0, "A", "B")
-        res = ex.open_ratio(-1, 2.0, 3.0)
-        by_sym = {f.symbol: f for f in res.fills}
-        assert by_sym["A"].side == "SELL"
-        assert by_sym["B"].side == "BUY"
 
 
 class TestBinanceSigning:

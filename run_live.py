@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Entry point for the paper/live trading loop.
+"""Entry point for the trading loop (prod or Binance testnet).
 
 Usage:
-    python3 run_live.py                     # paper mode, defaults
+    python3 run_live.py                     # prod, needs BINANCE_API_KEY/SECRET
+    python3 run_live.py --testnet           # Binance futures testnet
     python3 run_live.py --config cfg.json   # config overrides
-    python3 run_live.py --live              # real orders (needs BINANCE_API_KEY/SECRET)
+
+There is no built-in paper mode: rehearse the machinery on the testnet
+(note our stock-perp symbols may not be listed there — override symbols in
+the config), or rehearse the strategy on prod with a tiny leg_notional_usdt.
 """
 from __future__ import annotations
 
@@ -15,22 +19,21 @@ import os
 from typing import Optional
 
 from twopair.config import Config, load_config
-from twopair.executor import (BinanceClient, ChasePolicy, Executor,
-                              LiveExecutor, PaperExecutor)
+from twopair.executor import BinanceClient, ChasePolicy, LiveExecutor
 from twopair.journal import Journal
 from twopair.live import LiveApp
 from twopair.notify import Notifier
 
+TESTNET_BASE = "https://testnet.binancefuture.com"
 
-def build_executor(cfg: Config, notifier: Notifier) -> Executor:
-    """Constructs the executor matching cfg.mode."""
-    if cfg.mode == "paper":
-        return PaperExecutor(cfg.leg_notional_usdt, cfg.kr_symbol,
-                             cfg.us_symbol)
+
+def build_executor(cfg: Config, notifier: Notifier) -> LiveExecutor:
+    """Constructs the executor from environment credentials."""
     key = os.environ.get("BINANCE_API_KEY", "")
     secret = os.environ.get("BINANCE_API_SECRET", "")
     if not key or not secret:
-        raise SystemExit("live mode needs BINANCE_API_KEY / BINANCE_API_SECRET")
+        raise SystemExit("set BINANCE_API_KEY / BINANCE_API_SECRET "
+                         "(testnet keys for --testnet)")
     client = BinanceClient(key, secret, cfg.binance_base)
     policy = ChasePolicy(style=cfg.order_style,
                          chase_interval_seconds=cfg.chase_interval_seconds,
@@ -45,8 +48,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     """Parses arguments, wires components, and runs the loop."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default=None, help="JSON config path")
-    parser.add_argument("--live", action="store_true",
-                        help="place real orders (default: paper)")
+    parser.add_argument("--testnet", action="store_true",
+                        help="run against the Binance futures testnet")
     parser.add_argument("--warmup-days", type=int, default=7)
     args = parser.parse_args(argv)
 
@@ -54,8 +57,8 @@ def main(argv: Optional[list[str]] = None) -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     cfg = load_config(args.config)
-    if args.live:
-        cfg = dataclasses.replace(cfg, mode="live")
+    if args.testnet:
+        cfg = dataclasses.replace(cfg, binance_base=TESTNET_BASE)
     notifier = Notifier(cfg.telegram_token, cfg.telegram_chat_id)
     journal = Journal(cfg.db_path)
     app = LiveApp(cfg, build_executor(cfg, notifier), journal, notifier)

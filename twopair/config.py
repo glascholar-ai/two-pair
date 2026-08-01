@@ -57,16 +57,17 @@ class Config:
     fill_poll_seconds: float = 0.5        # order-status polling cadence
 
     # System.
-    mode: str = "paper"                  # "paper" | "live"
     db_path: str = "data/journal.sqlite"
     poll_grace_seconds: int = 10         # wait after bar close before fetching
     binance_base: str = "https://fapi.binance.com"
     telegram_token: str = ""
     telegram_chat_id: str = ""
 
+    def mode_label(self) -> str:
+        """Journal tag for this environment: "testnet" or "live"."""
+        return "testnet" if "testnet" in self.binance_base else "live"
+
     def __post_init__(self) -> None:
-        if self.mode not in ("paper", "live"):
-            raise ValueError(f"mode must be paper|live, got {self.mode!r}")
         if self.order_style not in ("bbo", "market"):
             raise ValueError(
                 f"order_style must be bbo|market, got {self.order_style!r}")
