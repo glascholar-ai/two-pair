@@ -15,7 +15,8 @@ import os
 from typing import Optional
 
 from twopair.config import Config, load_config
-from twopair.executor import BinanceClient, Executor, LiveExecutor, PaperExecutor
+from twopair.executor import (BinanceClient, ChasePolicy, Executor,
+                              LiveExecutor, PaperExecutor)
 from twopair.journal import Journal
 from twopair.live import LiveApp
 from twopair.notify import Notifier
@@ -31,8 +32,13 @@ def build_executor(cfg: Config, notifier: Notifier) -> Executor:
     if not key or not secret:
         raise SystemExit("live mode needs BINANCE_API_KEY / BINANCE_API_SECRET")
     client = BinanceClient(key, secret, cfg.binance_base)
+    policy = ChasePolicy(style=cfg.order_style,
+                         chase_interval_seconds=cfg.chase_interval_seconds,
+                         max_chases=cfg.max_chases,
+                         fill_poll_seconds=cfg.fill_poll_seconds)
     return LiveExecutor(client, cfg.leg_notional_usdt, cfg.kr_symbol,
-                        cfg.us_symbol, on_event=lambda m: notifier.send(m))
+                        cfg.us_symbol, policy=policy,
+                        on_event=lambda m: notifier.send(m))
 
 
 def main(argv: Optional[list[str]] = None) -> None:

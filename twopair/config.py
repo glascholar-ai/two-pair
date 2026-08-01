@@ -42,6 +42,14 @@ class Config:
     # operator's concern; the engine only knows absolute notional).
     leg_notional_usdt: float = 1000.0
 
+    # Execution style. "bbo": post-only limit joining the touch (BUY at best
+    # bid / SELL at best ask), re-quoted on timeout; falls back to a market
+    # order after max_chases. "market": immediate market orders.
+    order_style: str = "bbo"
+    chase_interval_seconds: float = 4.0   # wait per quote before re-pegging
+    max_chases: int = 5                   # re-quotes before market fallback
+    fill_poll_seconds: float = 0.5        # order-status polling cadence
+
     # System.
     mode: str = "paper"                  # "paper" | "live"
     db_path: str = "data/journal.sqlite"
@@ -53,6 +61,9 @@ class Config:
     def __post_init__(self) -> None:
         if self.mode not in ("paper", "live"):
             raise ValueError(f"mode must be paper|live, got {self.mode!r}")
+        if self.order_style not in ("bbo", "market"):
+            raise ValueError(
+                f"order_style must be bbo|market, got {self.order_style!r}")
         if self.z_out >= self.z_in:
             raise ValueError("z_out must be < z_in")
         if self.win_mu <= 0 or self.win_sd <= 0:

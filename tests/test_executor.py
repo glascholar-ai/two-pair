@@ -5,8 +5,12 @@ from typing import Dict, List, Optional
 
 import pytest
 
-from twopair.executor import (BinanceClient, LegFill, LiveExecutor,
-                              PaperExecutor, round_step)
+from twopair.executor import (BinanceClient, ChasePolicy, LegFill,
+                              LiveExecutor, PaperExecutor, round_step)
+
+FAST = ChasePolicy(style="bbo", chase_interval_seconds=0.01, max_chases=3,
+                   fill_poll_seconds=0.001)
+MARKET = ChasePolicy(style="market")
 
 
 class TestRoundStep:
@@ -68,23 +72,72 @@ class TestBinanceSigning:
 
 
 class _FakeClient(BinanceClient):
-    """BinanceClient stub with programmable failures."""
+    """BinanceClient stub with programmable behavior.
 
-    def __init__(self, fail_symbols: Optional[set] = None) -> None:
+    limit_plan: per-symbol list consumed one entry per limit order —
+      "fill"          order fills fully at its price
+      "none"          order rests unfilled (cancelled by the chase loop)
+      ("partial", f)  fraction f fills, remainder cancelled
+      "gtx_reject"    post-only rejected (would cross)
+    """
+
+    def __init__(self, fail_symbols: Optional[set] = None,
+                 limit_plan: Optional[Dict[str, List]] = None) -> None:
         super().__init__("k", "s")
         self.fail = fail_symbols or set()
-        self.orders: List[Dict[str, str]] = []
+        self.limit_plan = limit_plan or {}
+        self.orders: List[Dict[str, object]] = []
+        self.market_calls: List[Dict[str, object]] = []
         self.positions: Dict[str, float] = {}
+        self._working: Dict[str, dict] = {}
 
     def market_order(self, symbol: str, side: str, qty: float,
                      client_id: str) -> dict:
         if symbol in self.fail:
             raise ConnectionError(f"simulated reject for {symbol}")
-        self.orders.append({"symbol": symbol, "side": side, "qty": qty})
+        self.orders.append({"symbol": symbol, "side": side, "qty": qty,
+                            "type": "MARKET"})
+        self.market_calls.append(self.orders[-1])
         delta = qty if side == "BUY" else -qty
         self.positions[symbol] = self.positions.get(symbol, 0.0) + delta
         return {"orderId": len(self.orders), "executedQty": qty,
-                "avgPrice": 100.0}
+                "avgPrice": 100.5}
+
+    def limit_order_post_only(self, symbol: str, side: str, qty: float,
+                              price: float, client_id: str) -> dict:
+        if symbol in self.fail:
+            raise ConnectionError(f"simulated reject for {symbol}")
+        plan = self.limit_plan.get(symbol, ["fill"])
+        behavior = plan.pop(0) if plan else "fill"
+        if behavior == "gtx_reject":
+            raise ConnectionError("Order would immediately match and take")
+        self.orders.append({"symbol": symbol, "side": side, "qty": qty,
+                            "type": "LIMIT", "price": price})
+        filled = 0.0
+        if behavior == "fill":
+            filled = qty
+        elif isinstance(behavior, tuple) and behavior[0] == "partial":
+            filled = qty * behavior[1]
+        delta = filled if side == "BUY" else -filled
+        self.positions[symbol] = self.positions.get(symbol, 0.0) + delta
+        self._working[client_id] = {
+            "status": "FILLED" if filled == qty else "PARTIALLY_FILLED",
+            "executedQty": filled, "avgPrice": price,
+            "orderId": len(self.orders)}
+        return {"orderId": len(self.orders)}
+
+    def query_order(self, symbol: str, client_id: str) -> dict:
+        return dict(self._working[client_id])
+
+    def cancel_order(self, symbol: str, client_id: str) -> dict:
+        order = self._working[client_id]
+        if order["status"] == "FILLED":
+            raise ConnectionError("Unknown order sent")  # cancel/fill race
+        order["status"] = "CANCELED"
+        return dict(order)
+
+    def book_ticker(self, symbol: str) -> tuple:
+        return 99.0, 101.0
 
     def position_amt(self, symbol: str) -> float:
         return self.positions.get(symbol, 0.0)
@@ -96,14 +149,15 @@ class _FakeClient(BinanceClient):
 class TestLiveExecutorRepair:
     def test_both_legs_fill(self) -> None:
         client = _FakeClient()
-        ex = LiveExecutor(client, 1000.0, "KR", "US")
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST)
         res = ex.open_ratio(1, 1100.0, 145.0)
         assert res.ok and len(res.fills) == 2
 
     def test_single_leg_failure_repairs(self) -> None:
         events: List[str] = []
         client = _FakeClient(fail_symbols={"US"})
-        ex = LiveExecutor(client, 1000.0, "KR", "US", on_event=events.append)
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=MARKET,
+                          on_event=events.append)
         res = ex.open_ratio(1, 1100.0, 145.0)
         assert not res.ok
         assert "US" in res.error
@@ -113,7 +167,7 @@ class TestLiveExecutorRepair:
 
     def test_close_flattens_actual_positions(self) -> None:
         client = _FakeClient()
-        ex = LiveExecutor(client, 1000.0, "KR", "US")
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST)
         ex.open_ratio(-1, 1100.0, 145.0)
         res = ex.close_all(1100.0, 145.0)
         assert res.ok
@@ -122,6 +176,58 @@ class TestLiveExecutorRepair:
 
     def test_zero_qty_rejected(self) -> None:
         client = _FakeClient()
-        ex = LiveExecutor(client, 0.0001, "KR", "US")
+        ex = LiveExecutor(client, 0.0001, "KR", "US", policy=FAST)
         res = ex.open_ratio(1, 1100.0, 145.0)
         assert not res.ok and "zero" in res.error
+
+
+class TestBboChase:
+    def test_passive_fill_first_quote_no_market(self) -> None:
+        client = _FakeClient(limit_plan={"KR": ["fill"], "US": ["fill"]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert res.ok
+        assert client.market_calls == []          # purely passive
+        by_sym = {f.symbol: f for f in res.fills}
+        assert by_sym["KR"].price == pytest.approx(99.0)   # BUY joins bid
+        assert by_sym["US"].price == pytest.approx(101.0)  # SELL joins ask
+
+    def test_requote_then_fill(self) -> None:
+        client = _FakeClient(limit_plan={"KR": ["none", "fill"],
+                                         "US": ["fill"]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert res.ok
+        kr_limits = [o for o in client.orders
+                     if o["symbol"] == "KR" and o["type"] == "LIMIT"]
+        assert len(kr_limits) == 2                # cancelled once, re-pegged
+        assert client.market_calls == []
+
+    def test_market_fallback_after_max_chases(self) -> None:
+        events: List[str] = []
+        client = _FakeClient(limit_plan={"KR": ["none", "none", "none"],
+                                         "US": ["fill"]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST,
+                          on_event=events.append)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert res.ok
+        assert len(client.market_calls) == 1      # remainder taken at market
+        assert any("taking market" in e for e in events)
+
+    def test_partial_fill_accumulates(self) -> None:
+        client = _FakeClient(limit_plan={"KR": [("partial", 0.5), "fill"],
+                                         "US": ["fill"]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert res.ok
+        kr = {f.symbol: f for f in res.fills}["KR"]
+        assert kr.qty * 1100.0 == pytest.approx(1000.0, rel=1e-2)
+        assert client.market_calls == []
+
+    def test_gtx_reject_repegs(self) -> None:
+        client = _FakeClient(limit_plan={"KR": ["gtx_reject", "fill"],
+                                         "US": ["fill"]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert res.ok
+        assert client.market_calls == []

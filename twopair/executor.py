@@ -142,6 +142,37 @@ class BinanceClient:
             "quantity": f"{qty}", "newClientOrderId": client_id,
         }, signed=True)
 
+    def limit_order_post_only(self, symbol: str, side: str, qty: float,
+                              price: float, client_id: str) -> dict:
+        """Places a post-only (GTX) LIMIT order.
+
+        GTX is rejected by the exchange if it would cross the book, which is
+        exactly what we want: the order either joins the queue or fails fast.
+        """
+        return self.request("POST", "/fapi/v1/order", {
+            "symbol": symbol, "side": side, "type": "LIMIT",
+            "timeInForce": "GTX", "quantity": f"{qty}", "price": f"{price}",
+            "newClientOrderId": client_id,
+        }, signed=True)
+
+    def cancel_order(self, symbol: str, client_id: str) -> dict:
+        """Cancels an order by client id; returns the exchange response."""
+        return self.request("DELETE", "/fapi/v1/order", {
+            "symbol": symbol, "origClientOrderId": client_id,
+        }, signed=True)
+
+    def query_order(self, symbol: str, client_id: str) -> dict:
+        """Fetches order state (status / executedQty / avgPrice)."""
+        return self.request("GET", "/fapi/v1/order", {
+            "symbol": symbol, "origClientOrderId": client_id,
+        }, signed=True)
+
+    def book_ticker(self, symbol: str) -> tuple:
+        """Returns (best_bid, best_ask) for a symbol."""
+        data = self.request("GET", "/fapi/v1/ticker/bookTicker",
+                            {"symbol": symbol})
+        return float(data["bidPrice"]), float(data["askPrice"])
+
     def position_amt(self, symbol: str) -> float:
         """Returns the signed position amount for a symbol."""
         rows = self.request("GET", "/fapi/v2/positionRisk",
@@ -167,16 +198,35 @@ def round_step(qty: float, step: float) -> float:
     return math.floor(qty / step + 1e-9) * step
 
 
+@dataclasses.dataclass(frozen=True)
+class ChasePolicy:
+    """Passive-execution parameters for the BBO chase loop."""
+
+    style: str = "bbo"                 # "bbo" | "market"
+    chase_interval_seconds: float = 4.0
+    max_chases: int = 5
+    fill_poll_seconds: float = 0.5
+
+
 class LiveExecutor(Executor):
-    """Two-leg market execution on Binance with broken-leg repair."""
+    """Two-leg execution on Binance with broken-leg repair.
+
+    Legs are worked passively: a post-only limit joins the touch (BUY at
+    best bid / SELL at best ask). If the quote is not fully filled within
+    the chase interval it is cancelled and re-pegged to the fresh BBO; after
+    max_chases the remainder is taken with a market order — a pair leg must
+    always complete.
+    """
 
     def __init__(self, client: BinanceClient, leg_notional_usdt: float,
                  kr_symbol: str, us_symbol: str,
+                 policy: Optional[ChasePolicy] = None,
                  on_event: Optional[Callable[[str], None]] = None) -> None:
         self._client = client
         self._notional = leg_notional_usdt
         self._kr = kr_symbol
         self._us = us_symbol
+        self._policy = policy or ChasePolicy()
         self._on_event = on_event or (lambda msg: None)
         self._steps: Dict[str, float] = {}
 
@@ -185,14 +235,82 @@ class LiveExecutor(Executor):
             self._steps[symbol] = self._client.step_size(symbol)
         return self._steps[symbol]
 
-    def _place(self, symbol: str, side: str, qty: float,
-               purpose: str) -> LegFill:
+    def _market(self, symbol: str, side: str, qty: float,
+                purpose: str) -> LegFill:
         client_id = f"tp-{purpose}-{uuid.uuid4().hex[:10]}"
         resp = self._client.market_order(symbol, side, qty, client_id)
         price = float(resp.get("avgPrice") or 0.0) or float(
             resp.get("price") or 0.0)
         return LegFill(symbol, side, float(resp.get("executedQty") or qty),
                        price, str(resp.get("orderId", client_id)))
+
+    def _await_fill(self, symbol: str, client_id: str,
+                    deadline: float) -> dict:
+        """Polls an order until FILLED or the deadline passes."""
+        while True:
+            order = self._client.query_order(symbol, client_id)
+            if order.get("status") == "FILLED" or time.time() >= deadline:
+                return order
+            time.sleep(self._policy.fill_poll_seconds)
+
+    def _reap(self, symbol: str, client_id: str) -> tuple:
+        """Cancels a working order; returns (filled_qty, avg_price).
+
+        A cancel that races a fill ("order does not exist" / already FILLED)
+        is resolved by querying final state.
+        """
+        try:
+            order = self._client.cancel_order(symbol, client_id)
+        except Exception:  # noqa: BLE001 — cancel/fill race
+            order = self._client.query_order(symbol, client_id)
+        qty = float(order.get("executedQty") or 0.0)
+        price = float(order.get("avgPrice") or 0.0)
+        return qty, price
+
+    def _place(self, symbol: str, side: str, qty: float,
+               purpose: str) -> LegFill:
+        """Executes one leg per the policy (passive chase, market fallback)."""
+        if self._policy.style == "market":
+            return self._market(symbol, side, qty, purpose)
+        step = self._step(symbol)
+        remaining = qty
+        filled_qty = 0.0
+        filled_notional = 0.0
+        last_id = ""
+        for _ in range(self._policy.max_chases):
+            bid, ask = self._client.book_ticker(symbol)
+            price = bid if side == "BUY" else ask
+            client_id = f"tp-{purpose}-{uuid.uuid4().hex[:10]}"
+            try:
+                self._client.limit_order_post_only(symbol, side, remaining,
+                                                   price, client_id)
+            except Exception:  # noqa: BLE001 — GTX reject: book moved; re-peg
+                continue
+            last_id = client_id
+            deadline = time.time() + self._policy.chase_interval_seconds
+            order = self._await_fill(symbol, client_id, deadline)
+            if order.get("status") == "FILLED":
+                got = float(order.get("executedQty") or remaining)
+                filled_qty += got
+                filled_notional += got * float(order.get("avgPrice") or price)
+                remaining = 0.0
+                break
+            got, avg = self._reap(symbol, client_id)
+            if got > 0:
+                filled_qty += got
+                filled_notional += got * (avg or price)
+                remaining = round_step(remaining - got, step)
+            if remaining <= 0:
+                break
+        if remaining > 0:
+            self._on_event(f"{symbol}: {remaining} unfilled after "
+                           f"{self._policy.max_chases} chases; taking market")
+            fill = self._market(symbol, side, remaining, purpose)
+            filled_qty += fill.qty
+            filled_notional += fill.qty * fill.price
+            last_id = fill.order_id
+        avg_price = filled_notional / filled_qty if filled_qty > 0 else 0.0
+        return LegFill(symbol, side, filled_qty, avg_price, last_id)
 
     def _both(self, orders: List[tuple], purpose: str) -> PairExecution:
         """Places two legs concurrently; repairs if exactly one fails."""
