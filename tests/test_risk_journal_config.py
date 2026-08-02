@@ -101,7 +101,7 @@ class TestJournal:
         journal.record_bar(sig, kr=1100.0, us=145.0, fx=1440.0)
         trade = Trade(entry_ts=MONDAY, exit_ts=MONDAY + dt.timedelta(hours=3),
                       side=1, entry_z=-2.3, max_abs_z=2.9, entry_seg="KR_open",
-                      held_hours=3.0, pnl_pct=1.25,
+                      held_hours=3.0, pnl_pct=1.25, max_mtm_pct=1.4,
                       reason=CloseReason.CONVERGED)
         journal.record_trade(trade, "paper")
         journal.record_fill(MONDAY, "KRUSDT", "BUY", 0.9, 1100.0, "1", "open")
@@ -121,11 +121,36 @@ class TestJournal:
                 Trade(entry_ts=MONDAY,
                       exit_ts=MONDAY + dt.timedelta(hours=hours),
                       side=1, entry_z=2.1, max_abs_z=2.5, entry_seg="KR_open",
-                      held_hours=float(hours), pnl_pct=pnl, reason=reason),
+                      held_hours=float(hours), pnl_pct=pnl, max_mtm_pct=0.0,
+                      reason=reason),
                 "live")
         last = journal.last_trade("live")
         assert last is not None and last[1] == "conv"
         assert journal.last_trade("testnet") is None
+        journal.close()
+
+    def test_migrates_old_trades_schema(self, tmp_path: pathlib.Path) -> None:
+        import sqlite3
+        path = str(tmp_path / "old.sqlite")
+        conn = sqlite3.connect(path)
+        conn.execute(
+            "CREATE TABLE trades (entry_ts TEXT, exit_ts TEXT, side INTEGER,"
+            " entry_z REAL, max_abs_z REAL, entry_seg TEXT, held_hours REAL,"
+            " pnl_pct REAL, reason TEXT, mode TEXT)")
+        conn.execute("INSERT INTO trades VALUES ('a','b',1,2.0,2.5,'KR_open',"
+                     "3.0,1.0,'conv','live')")
+        conn.commit()
+        conn.close()
+        journal = Journal(path)   # migrates
+        trade = Trade(entry_ts=MONDAY, exit_ts=MONDAY + dt.timedelta(hours=1),
+                      side=-1, entry_z=2.2, max_abs_z=2.4, entry_seg="wknd",
+                      held_hours=1.0, pnl_pct=0.5, max_mtm_pct=0.9,
+                      reason=CloseReason.CONVERGED)
+        journal.record_trade(trade, "live")
+        rows = journal.query(
+            "SELECT pnl_pct, max_mtm_pct FROM trades ORDER BY rowid")
+        assert rows[0] == (1.0, None)      # legacy row preserved
+        assert rows[1] == (0.5, 0.9)       # new row complete
         journal.close()
 
     def test_bar_upsert(self, tmp_path: pathlib.Path) -> None:

@@ -34,6 +34,7 @@ class CloseReason(enum.Enum):
     CONVERGED = "conv"
     TIMEOUT = "timeout"
     STOP = "stop"
+    TAKE_PROFIT = "tp"
 
 
 @dataclasses.dataclass
@@ -47,6 +48,7 @@ class Position:
     side: int          # +1 long ratio, -1 short ratio
     mtm_pct: float = 0.0
     max_abs_z: float = 0.0
+    max_mtm_pct: float = 0.0
 
     def held_hours(self, now: dt.datetime) -> float:
         """Hours since entry."""
@@ -65,6 +67,7 @@ class Trade:
     entry_seg: str
     held_hours: float
     pnl_pct: float
+    max_mtm_pct: float
     reason: CloseReason
 
 
@@ -169,6 +172,8 @@ class Strategy:
         if self._pos is not None:
             self._pos.mtm_pct += self._pos.side * (dlr * 100.0
                                                    + funding_long_ratio_pct)
+            self._pos.max_mtm_pct = max(self._pos.max_mtm_pct,
+                                        self._pos.mtm_pct)
         if sig.z is None:
             return Decision(Action.NONE)
         abs_z = abs(sig.z)
@@ -195,13 +200,17 @@ class Strategy:
 
         stop_hit = (cfg.mtm_stop_pct > 0
                     and pos.mtm_pct <= -cfg.mtm_stop_pct)
+        tp_hit = (cfg.mtm_take_profit_pct > 0
+                  and pos.mtm_pct >= cfg.mtm_take_profit_pct)
         timed_out = pos.held_hours(sig.ts) >= cfg.max_hold_hours
         converged = abs_z < cfg.z_out
-        if not (converged or timed_out or stop_hit):
+        if not (converged or timed_out or stop_hit or tp_hit):
             return Decision(Action.NONE, z_alert=alert)
 
         if converged:
             reason = CloseReason.CONVERGED
+        elif tp_hit:
+            reason = CloseReason.TAKE_PROFIT
         elif stop_hit:
             reason = CloseReason.STOP
             self._need_rearm = True
@@ -211,7 +220,8 @@ class Strategy:
                       entry_z=pos.entry_z, max_abs_z=pos.max_abs_z,
                       entry_seg=pos.entry_seg,
                       held_hours=pos.held_hours(sig.ts),
-                      pnl_pct=pos.mtm_pct, reason=reason)
+                      pnl_pct=pos.mtm_pct, max_mtm_pct=pos.max_mtm_pct,
+                      reason=reason)
         self.trades.append(trade)
         self._pos = None
         return Decision(Action.CLOSE, trade=trade, z_alert=alert)

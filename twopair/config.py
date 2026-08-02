@@ -29,7 +29,8 @@ class Config:
     z_in: float = 2.0
     z_out: float = 0.5
     max_hold_hours: float = 24.0
-    mtm_stop_pct: float = 2.5  # 0 disables
+    mtm_stop_pct: float = 2.5           # 0 disables
+    mtm_take_profit_pct: float = 0.0    # close when MTM >= this; 0 disables
     bar_seconds: int = 300
 
     # Risk parameters.

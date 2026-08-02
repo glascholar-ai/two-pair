@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS bars (
 CREATE TABLE IF NOT EXISTS trades (
     entry_ts TEXT, exit_ts TEXT, side INTEGER, entry_z REAL,
     max_abs_z REAL, entry_seg TEXT, held_hours REAL, pnl_pct REAL,
-    reason TEXT, mode TEXT
+    max_mtm_pct REAL, reason TEXT, mode TEXT
 );
 CREATE TABLE IF NOT EXISTS fills (
     ts TEXT, symbol TEXT, side TEXT, qty REAL, price REAL,
@@ -37,7 +37,16 @@ class Journal:
     def __init__(self, path: str) -> None:
         self._conn = sqlite3.connect(path)
         self._conn.executescript(_SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Adds columns introduced after a database was first created."""
+        cols = {row[1] for row in self._conn.execute(
+            "PRAGMA table_info(trades)")}
+        if "max_mtm_pct" not in cols:
+            self._conn.execute(
+                "ALTER TABLE trades ADD COLUMN max_mtm_pct REAL")
 
     def close(self) -> None:
         """Closes the underlying connection."""
@@ -55,10 +64,13 @@ class Journal:
     def record_trade(self, trade: Trade, mode: str) -> None:
         """Stores a closed round trip."""
         self._conn.execute(
-            "INSERT INTO trades VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO trades (entry_ts, exit_ts, side, entry_z,"
+            " max_abs_z, entry_seg, held_hours, pnl_pct, max_mtm_pct,"
+            " reason, mode) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (trade.entry_ts.isoformat(), trade.exit_ts.isoformat(),
              trade.side, trade.entry_z, trade.max_abs_z, trade.entry_seg,
-             trade.held_hours, trade.pnl_pct, trade.reason.value, mode))
+             trade.held_hours, trade.pnl_pct, trade.max_mtm_pct,
+             trade.reason.value, mode))
         self._conn.commit()
 
     def record_fill(self, ts: dt.datetime, symbol: str, side: str, qty: float,
