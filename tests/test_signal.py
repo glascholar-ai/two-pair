@@ -28,6 +28,15 @@ class TestSegmentOf:
         assert segment_of(dt.datetime(2026, 7, 6, 20, 0, tzinfo=UTC)) == SEG_US_KR_GAP
         assert segment_of(dt.datetime(2026, 7, 6, 23, 55, tzinfo=UTC)) == SEG_US_KR_GAP
 
+    def test_winter_dst_shift(self) -> None:
+        # January (EST, UTC-5): the US session is 14:30-21:00 UTC.
+        jan = dt.datetime(2026, 1, 15, 14, 0, tzinfo=UTC)   # 09:00 NY
+        assert segment_of(jan) == SEG_KR_US_GAP              # pre-open
+        assert segment_of(jan.replace(hour=14, minute=30)) == SEG_US_OPEN
+        assert segment_of(jan.replace(hour=20, minute=55)) == SEG_US_OPEN
+        assert segment_of(jan.replace(hour=21, minute=0)) == SEG_US_KR_GAP
+        # Summer boundaries (EDT) are covered by test_boundaries above.
+
     def test_weekend(self) -> None:
         assert segment_of(dt.datetime(2026, 7, 11, 12, 0, tzinfo=UTC)) == SEG_WEEKEND
         assert segment_of(dt.datetime(2026, 7, 12, 3, 0, tzinfo=UTC)) == SEG_WEEKEND

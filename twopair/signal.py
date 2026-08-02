@@ -17,20 +17,27 @@ import collections
 import dataclasses
 import datetime as dt
 import math
+import zoneinfo
 from typing import Deque, Dict, Optional
 
 import numpy as np
 
-# Session segments, UTC. KR cash session 00:00-06:30, US cash 13:30-20:00.
+# Session segments. KR cash session is fixed at 00:00-06:30 UTC (KST has no
+# DST); the US session is 09:30-16:00 America/New_York and therefore shifts
+# by an hour in UTC between EDT and EST — resolved via zoneinfo.
 SEG_KR_OPEN = "KR_open"
 SEG_KR_US_GAP = "KR->US"
 SEG_US_OPEN = "US_open"
 SEG_US_KR_GAP = "US->KR"
 SEG_WEEKEND = "wknd"
 
+_NY = zoneinfo.ZoneInfo("America/New_York")
+_US_OPEN_MIN = 9 * 60 + 30    # 09:30 New York
+_US_CLOSE_MIN = 16 * 60       # 16:00 New York
+
 
 def segment_of(ts: dt.datetime) -> str:
-    """Maps a UTC timestamp to its session segment.
+    """Maps a UTC timestamp to its session segment (DST-aware for the US).
 
     Args:
         ts: Timezone-aware UTC timestamp of a bar close.
@@ -43,9 +50,11 @@ def segment_of(ts: dt.datetime) -> str:
     minutes = ts.hour * 60 + ts.minute
     if minutes < 390:
         return SEG_KR_OPEN
-    if minutes < 810:
+    ny = ts.astimezone(_NY)
+    ny_minutes = ny.hour * 60 + ny.minute
+    if ny_minutes < _US_OPEN_MIN:
         return SEG_KR_US_GAP
-    if minutes < 1200:
+    if ny_minutes < _US_CLOSE_MIN:
         return SEG_US_OPEN
     return SEG_US_KR_GAP
 

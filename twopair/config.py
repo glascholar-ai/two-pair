@@ -42,6 +42,9 @@ class Config:
     # Per-cycle position sync (plan A): exchange is the source of truth.
     sync_tolerance_pct: float = 5.0      # max leg-notional mismatch to accept
     dust_usdt: float = 10.0              # below this a leg counts as flat
+    adopt_size_ratio: float = 2.0        # refuse to adopt a pair whose leg
+                                         # notional is >Nx or <1/Nx of config
+                                         # (stop %% would be mis-scaled)
     rearm_recovery_hours: float = 6.0    # startup: last stop within N hours
                                          # re-latches the re-arm suppressor
 

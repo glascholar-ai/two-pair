@@ -51,8 +51,9 @@ class SyncAction:
 
 
 def classify_sync(view: PairView, kr_price: float, us_price: float,
-                  local_side: int, dust_usdt: float,
-                  tolerance_pct: float) -> tuple[str, int, str]:
+                  local_side: int, dust_usdt: float, tolerance_pct: float,
+                  expected_leg_notional: float,
+                  max_size_ratio: float) -> tuple[str, int, str]:
     """Classifies exchange state against local state (pure function).
 
     Args:
@@ -81,6 +82,14 @@ def classify_sync(view: PairView, kr_price: float, us_price: float,
         if mismatch <= tolerance_pct:
             side = 1 if view.kr_qty > 0 else -1
             if local_side == 0:
+                avg_notional = (abs(kr_notional) + abs(us_notional)) / 2.0
+                ratio = avg_notional / max(expected_leg_notional, 1e-9)
+                if not (1.0 / max_size_ratio <= ratio <= max_size_ratio):
+                    return (SyncAction.REPAIR, 0,
+                            f"size anomaly: leg notional {avg_notional:.0f} "
+                            f"vs configured {expected_leg_notional:.0f} "
+                            f"(ratio {ratio:.2f}) — stop %% would be "
+                            "mis-scaled; flattening")
                 return SyncAction.ADOPT, side, f"mismatch {mismatch:.1f}%"
             if local_side == side:
                 return SyncAction.TRACK, side, ""
@@ -189,7 +198,7 @@ class LiveApp:
         bar = self._fetch_latest_bar()
         if bar is None:
             return
-        self._sync_position(bar)
+        entry_safe = self._sync_position(bar)
         if self._cfg.deadman_seconds > 0:
             self._exec.arm_deadman(self._cfg.deadman_seconds)
         sig = self._engine.update(bar)
@@ -206,7 +215,7 @@ class LiveApp:
             logger.warning(msg)
             self._notify.send(msg)
         if decision.action == Action.OPEN:
-            self._handle_open(decision.side, bar, sig)
+            self._handle_open(decision.side, bar, sig, entry_safe)
         elif decision.action == Action.CLOSE:
             self._handle_close(bar, sig, decision)
         self._maybe_send_digest()
@@ -262,8 +271,12 @@ class LiveApp:
     def _sync_position(self, bar: Bar) -> bool:
         """Reconciles local position state with the exchange (plan A).
 
-        Returns True when exchange truth was applied; False when the view
-        fetch failed (MTM then stays one bar stale).
+        Returns True only when the sync succeeded AND left a clean state —
+        the precondition for opening NEW positions this cycle. False when
+        the view fetch failed (exchange state unknown: an unseen position
+        may exist, so entries are unsafe; MTM stays one bar stale) or when
+        a REPAIR was needed (something was wrong; do not re-enter on the
+        same bar).
         """
         pos = self._strategy.position
         entry_ts = pos.entry_ts if pos is not None else None
@@ -275,7 +288,8 @@ class LiveApp:
         local_side = pos.side if pos is not None else 0
         action, side, detail = classify_sync(
             view, bar.kr, bar.us, local_side,
-            self._cfg.dust_usdt, self._cfg.sync_tolerance_pct)
+            self._cfg.dust_usdt, self._cfg.sync_tolerance_pct,
+            self._cfg.leg_notional_usdt, self._cfg.adopt_size_ratio)
         if action == SyncAction.NONE:
             return True
         if action == SyncAction.TRACK:
@@ -301,7 +315,7 @@ class LiveApp:
         msg = f"sync repair: {detail}; flattened (ok={result.ok})"
         logger.error(msg)
         self._notify.send(msg)
-        return True
+        return False  # something was wrong — no new entries this cycle
 
     def _adopt(self, view: PairView, bar: Bar, side: int,
                detail: str) -> None:
@@ -322,7 +336,14 @@ class LiveApp:
         self._notify.send(msg)
 
     # ---------------------------------------------------------------- actions
-    def _handle_open(self, side: int, bar: Bar, sig: SignalState) -> None:
+    def _handle_open(self, side: int, bar: Bar, sig: SignalState,
+                     entry_safe: bool) -> None:
+        if not entry_safe:
+            self._strategy.cancel_entry()
+            msg = "entry suppressed: position sync unavailable or repaired"
+            logger.warning(msg)
+            self._notify.send(msg)
+            return
         blocked = self._guard.entry_blocked(_utcnow(), bar.ts,
                                             self._fx_ts or bar.ts)
         if blocked:
@@ -358,14 +379,20 @@ class LiveApp:
         trade = decision.trade
         if trade is None:  # unreachable on a CLOSE decision; keep types honest
             return
+        if not result.ok:
+            # Execution not confirmed: record nothing. The local position is
+            # already dropped; if legs actually remain on the exchange the
+            # next sync ADOPTs them and management continues.
+            logger.error("close failed: %s", result.error)
+            self._notify.send(
+                f"CLOSE FAILED ({trade.reason.value}); repaired to flat; "
+                f"trade NOT recorded: {result.error}")
+            return
         self._journal.record_trade(trade, self._cfg.mode_label())
         self._guard.record_trade_pnl(trade.exit_ts, trade.pnl_pct)
-        status = "" if result.ok else f" (EXEC ERROR: {result.error})"
         self._notify.send(
             f"CLOSE {trade.reason.value} pnl={trade.pnl_pct:+.2f}% "
-            f"held={trade.held_hours:.1f}h{status}")
-        if not result.ok:
-            logger.error("close failed: %s", result.error)
+            f"held={trade.held_hours:.1f}h")
 
     # ------------------------------------------------------------------ data
     def _fetch_latest_bar(self) -> Optional[Bar]:

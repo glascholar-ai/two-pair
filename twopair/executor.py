@@ -20,7 +20,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -344,13 +344,18 @@ class LiveExecutor:
                 return last
             time.sleep(self._policy.fill_poll_seconds)
 
-    def _reap(self, symbol: str, client_id: str) -> tuple:
+    def _reap(self, symbol: str,
+              client_id: str) -> Optional[Tuple[float, float]]:
         """Cancels a working order; returns (filled_qty, avg_price).
 
         A cancel that races a fill ("order does not exist" / already FILLED)
-        is resolved by querying final state.
+        is resolved by querying final state. Returns None when BOTH the
+        cancel and every fallback query failed — the order state is then
+        UNKNOWN (it may still be live or filled) and the caller must abort
+        the chase instead of treating it as zero fill: re-quoting on top of
+        an unknown live order risks duplicate exposure.
         """
-        order: dict = {}
+        order: Optional[dict] = None
         try:
             order = self._client.cancel_order(symbol, client_id)
         except Exception:  # noqa: BLE001 — cancel/fill race or papi lag
@@ -360,6 +365,8 @@ class LiveExecutor:
                     break
                 except Exception:  # noqa: BLE001
                     time.sleep(self._policy.fill_poll_seconds)
+        if order is None:
+            return None
         qty = float(order.get("executedQty") or 0.0)
         price = float(order.get("avgPrice") or 0.0)
         return qty, price
@@ -393,7 +400,18 @@ class LiveExecutor:
                 filled_notional += got * float(order.get("avgPrice") or price)
                 remaining = 0.0
                 break
-            got, avg = self._reap(symbol, client_id)
+            reaped = self._reap(symbol, client_id)
+            if reaped is None:
+                # Unknown order state: kill anything resting on this symbol
+                # and abort the leg; pair-level cleanup reconciles positions.
+                try:
+                    self._client.cancel_all_open(symbol)
+                except Exception:  # noqa: BLE001 — best effort
+                    pass
+                raise RuntimeError(
+                    f"{symbol}: order {client_id} state unknown after "
+                    "cancel+query failures; chase aborted")
+            got, avg = reaped
             if got > 0:
                 filled_qty += got
                 filled_notional += got * (avg or price)
@@ -411,7 +429,13 @@ class LiveExecutor:
         return LegFill(symbol, side, filled_qty, avg_price, last_id)
 
     def _both(self, orders: List[tuple], purpose: str) -> PairExecution:
-        """Places two legs concurrently; repairs if exactly one fails."""
+        """Places two legs concurrently; on any failure, repairs to flat.
+
+        Repair is driven by EXCHANGE POSITIONS, never by the fills Python
+        happened to see: a leg can partially fill and then raise, leaving
+        exposure that appears in positionRisk but not in the return value.
+        Both intents (open aborted / close completed) resolve to flat.
+        """
         fills: List[LegFill] = []
         errors: List[str] = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
@@ -424,18 +448,32 @@ class LiveExecutor:
                     errors.append(f"{futs[fut][0]}: {err}")
         if not errors:
             return PairExecution(True, fills)
-        if len(fills) == 1:  # exactly one leg on — flatten it immediately
-            leg = fills[0]
-            repair_side = "SELL" if leg.side == "BUY" else "BUY"
-            self._on_event(f"single-leg failure ({errors}); repairing "
-                           f"{leg.symbol}")
-            try:
-                repair = self._place(leg.symbol, repair_side, leg.qty,
-                                     "repair")
-                fills.append(repair)
-            except Exception as err:  # noqa: BLE001
-                errors.append(f"repair failed: {err}")
+        self._on_event(f"pair execution failed ({errors}); repairing to "
+                       "flat from exchange positions")
+        fills += self._repair_to_flat(errors)
         return PairExecution(False, fills, "; ".join(errors))
+
+    def _repair_to_flat(self, errors: List[str]) -> List[LegFill]:
+        """Cancels all resting orders and flattens both legs by position.
+
+        Residual exposure from fills that land after this snapshot (papi
+        lag) is caught by the next cycle's position sync.
+        """
+        out: List[LegFill] = []
+        for symbol in (self._kr, self._us):
+            try:
+                self._client.cancel_all_open(symbol)
+            except Exception as err:  # noqa: BLE001 — best effort
+                errors.append(f"repair cancel-all {symbol}: {err}")
+            try:
+                amt = self._client.position_amt(symbol)
+                if abs(amt) > 0:
+                    out.append(self._market(
+                        symbol, "SELL" if amt > 0 else "BUY", abs(amt),
+                        "repair"))
+            except Exception as err:  # noqa: BLE001
+                errors.append(f"repair flatten {symbol}: {err}")
+        return out
 
     def open_ratio(self, side: int, kr_price: float,
                    us_price: float) -> PairExecution:

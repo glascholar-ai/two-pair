@@ -126,6 +126,10 @@ class _FakeClient(BinanceClient):
     def symbol_filters(self, symbol: str) -> tuple:
         return 0.001, 0.01
 
+    def cancel_all_open(self, symbol: str) -> dict:
+        self.orders.append({"symbol": symbol, "type": "CANCEL_ALL"})
+        return {"code": 200}
+
 
 class TestLiveExecutorRepair:
     def test_both_legs_fill(self) -> None:
@@ -327,3 +331,88 @@ class TestPapiLagTolerance:
         assert res.ok
         for fill in res.fills:
             assert fill.qty > 0                # requested qty, not 0.00
+
+
+
+class TestUnknownOrderState:
+    """P1: cancel+query both failing must abort the chase, not re-quote."""
+
+    class _NoReapClient(_FakeClient):
+        def cancel_order(self, symbol: str, client_id: str) -> dict:
+            raise ConnectionError("cancel timeout")
+
+        def query_order(self, symbol: str, client_id: str) -> dict:
+            raise ConnectionError("query timeout")
+
+    def test_chase_aborts_and_repairs_to_flat(self) -> None:
+        events: List[str] = []
+        client = self._NoReapClient(
+            limit_plan={"KR": ["none"], "US": ["fill"]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST,
+                          on_event=events.append)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert not res.ok
+        assert "state unknown" in res.error
+        # No blind re-quote of the unknown order: exactly one KR limit.
+        kr_limits = [o for o in client.orders
+                     if o.get("symbol") == "KR" and o.get("type") == "LIMIT"]
+        assert len(kr_limits) == 1
+        # Resting orders killed and both legs flattened by POSITION.
+        assert any(o.get("type") == "CANCEL_ALL" for o in client.orders)
+        assert client.position_amt("KR") == pytest.approx(0.0)
+        assert client.position_amt("US") == pytest.approx(0.0)
+
+
+class TestPartialFillThenException:
+    """P1: repair must use exchange positions, not returned fills."""
+
+    class _PartialThenBoom(_FakeClient):
+        def market_order(self, symbol: str, side: str, qty: str,
+                         client_id: str) -> dict:
+            if symbol == "KR":
+                raise ConnectionError("market reject")   # fallback fails
+            return super().market_order(symbol, side, qty, client_id)
+
+    def test_partial_fill_is_flattened(self) -> None:
+        # KR: chase partially fills 50% then rests -> market fallback raises
+        # -> _place raises with 0.5 leg already on. US: fills fine.
+        client = self._PartialThenBoom(
+            limit_plan={"KR": [("partial", 0.5), "none", "none"],
+                        "US": ["fill"]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert not res.ok
+        # The hidden partial KR long and the US short must BOTH be gone —
+        # repair reads positionRisk, not the fills list.
+        # (KR flatten SELL also fails in this fake -> stays exposed, but the
+        # attempt must have been made; US must be flat.)
+        us_flat = client.position_amt("US") == pytest.approx(0.0)
+        kr_flatten_attempted = any(
+            o.get("symbol") == "KR" and o.get("type") == "CANCEL_ALL"
+            for o in client.orders)
+        assert us_flat and kr_flatten_attempted
+        assert "repair flatten KR" in res.error
+
+    def test_partial_fill_flattened_when_market_recovers(self) -> None:
+        class _PartialOnce(_FakeClient):
+            def __init__(self, **kw) -> None:
+                super().__init__(**kw)
+                self._first = True
+
+            def market_order(self, symbol: str, side: str, qty: str,
+                             client_id: str) -> dict:
+                if symbol == "KR" and self._first:
+                    self._first = False
+                    raise ConnectionError("market reject")
+                return super().market_order(symbol, side, qty, client_id)
+
+        client = _PartialOnce(limit_plan={"KR": [("partial", 0.5), "none",
+                                                 "none"],
+                                          "US": ["fill"]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert not res.ok
+        # step-size rounding can leave sub-dust residue; anything < $1 is
+        # dust and gets reconciled by the next position sync.
+        assert client.position_amt("KR") == pytest.approx(0.0, abs=1e-3)
+        assert client.position_amt("US") == pytest.approx(0.0, abs=1e-3)

@@ -20,8 +20,11 @@ def view(kr_qty: float, us_qty: float, pnl: float = 0.0) -> PairView:
     return PairView(kr_qty=kr_qty, us_qty=us_qty, pnl_pct=pnl)
 
 
-def classify(v: PairView, local_side: int) -> tuple[str, int, str]:
-    return classify_sync(v, KR_PX, US_PX, local_side, DUST, TOL)
+def classify(v: PairView, local_side: int,
+             expected_notional: float = 1000.0,
+             max_ratio: float = 2.0) -> tuple[str, int, str]:
+    return classify_sync(v, KR_PX, US_PX, local_side, DUST, TOL,
+                         expected_notional, max_ratio)
 
 
 class TestClassifySync:
@@ -68,6 +71,22 @@ class TestClassifySync:
         # 1000 vs ~980 USD -> ~2%.
         action, _, _ = classify(view(0.909, -6.76), 1)
         assert action == SyncAction.TRACK
+
+    def test_adopt_refused_for_oversized_pair(self) -> None:
+        # ~5x the configured notional: healthy pair but stop %% would be
+        # mis-scaled -> REPAIR, not ADOPT.  (P2: adopt size gate)
+        action, _, detail = classify(view(4.5, -34.5), 0)
+        assert action == SyncAction.REPAIR and "size anomaly" in detail
+
+    def test_adopt_refused_for_undersized_pair(self) -> None:
+        # ~1/5 of configured notional.
+        action, _, detail = classify(view(0.18, -1.38), 0)
+        assert action == SyncAction.REPAIR and "size anomaly" in detail
+
+    def test_adopt_ok_within_size_ratio(self) -> None:
+        # ~1.5x configured notional, ratio limit 2.0 -> adoptable.
+        action, side, _ = classify(view(1.36, -10.34), 0)
+        assert action == SyncAction.ADOPT and side == 1
 
 
 class TestStrategyAdoption:
@@ -331,3 +350,114 @@ class TestDailyDigest:
         assert "side=-1" in msg and "mtm=-0.75%" in msg
         assert "held=3.0h" in msg and "blocked entries: 2" in msg
         assert app._blocked_entries == 0   # reset after digest
+
+
+
+class _CaptureJournal:
+    """Journal stand-in recording calls."""
+
+    def __init__(self) -> None:
+        self.trades: List[tuple] = []
+        self.fills: List[tuple] = []
+        self.bars: List[tuple] = []
+
+    def record_trade(self, trade, mode) -> None:  # type: ignore[no-untyped-def]
+        self.trades.append((trade, mode))
+
+    def record_fill(self, *a) -> None:  # type: ignore[no-untyped-def]
+        self.fills.append(a)
+
+    def record_bar(self, *a) -> None:  # type: ignore[no-untyped-def]
+        self.bars.append(a)
+
+    def query(self, *a) -> list:  # type: ignore[no-untyped-def]
+        return []
+
+    def last_trade(self, mode: str):  # type: ignore[no-untyped-def]
+        return None
+
+
+class _StubExec:
+    """Executor stand-in with programmable results."""
+
+    def __init__(self, close_ok: bool = True) -> None:
+        from twopair.executor import PairExecution
+        self.open_calls = 0
+        self.close_calls = 0
+        self._close = PairExecution(close_ok, [], "" if close_ok else "boom")
+
+    def open_ratio(self, side, kr, us):  # type: ignore[no-untyped-def]
+        from twopair.executor import PairExecution
+        self.open_calls += 1
+        return PairExecution(True, [])
+
+    def close_all(self, kr, us):  # type: ignore[no-untyped-def]
+        self.close_calls += 1
+        return self._close
+
+
+def _mk_app(close_ok: bool = True):
+    import os
+    import tempfile
+    import twopair.live as livemod
+    cfg = Config(db_path=os.path.join(tempfile.mkdtemp(), "j.sqlite"))
+    journal = _CaptureJournal()
+    execu = _StubExec(close_ok)
+    app = livemod.LiveApp(cfg, execu, journal,  # type: ignore[arg-type]
+                          _CaptureNotifier())  # type: ignore[arg-type]
+    return app, execu, journal
+
+
+class TestLiveFaultInjection:
+    def _bar_and_sig(self):
+        # Bar must be fresh: RiskGuard blocks entries on stale bars.
+        from twopair.signal import Bar, SignalState
+        ts = dt.datetime.now(UTC).replace(second=0, microsecond=0)
+        bar = Bar(ts=ts, kr=1100.0, us=145.0, fx=1400.0)
+        sig = SignalState(ts=ts, lr=0.0, seg="KR_open", mu=0.0, sd=1.0,
+                          z=2.5)
+        return bar, sig
+
+    def test_entry_suppressed_when_sync_unsafe(self) -> None:
+        app, execu, _journal = _mk_app()
+        bar, sig = self._bar_and_sig()
+        decision = app._strategy.on_bar(sig, 0.0, 0.0)
+        assert decision.action.value == "open"
+        app._handle_open(decision.side, bar, sig, entry_safe=False)
+        assert execu.open_calls == 0                 # no order placed
+        assert app._strategy.position is None        # entry rolled back
+
+    def test_entry_proceeds_when_sync_safe(self) -> None:
+        app, execu, _ = _mk_app()
+        bar, sig = self._bar_and_sig()
+        decision = app._strategy.on_bar(sig, 0.0, 0.0)
+        app._handle_open(decision.side, bar, sig, entry_safe=True)
+        assert execu.open_calls == 1
+
+    def test_failed_close_records_nothing(self) -> None:
+        app, execu, journal = _mk_app(close_ok=False)
+        bar, sig = self._bar_and_sig()
+        app._strategy.adopt_position(1, bar.ts - dt.timedelta(hours=1),
+                                     0.0, "KR_open")
+        sig2 = dataclasses_replace_sig(sig, z=0.1)
+        decision = app._strategy.on_bar(sig2, 0.0, 0.0)
+        assert decision.action.value == "close"
+        app._handle_close(bar, sig2, decision)
+        assert execu.close_calls == 1
+        assert journal.trades == []                  # nothing recorded
+        assert app._guard.daily_pnl_pct(bar.ts) == 0.0
+
+    def test_ok_close_records_trade(self) -> None:
+        app, _execu, journal = _mk_app(close_ok=True)
+        bar, sig = self._bar_and_sig()
+        app._strategy.adopt_position(1, bar.ts - dt.timedelta(hours=1),
+                                     1.0, "KR_open")
+        sig2 = dataclasses_replace_sig(sig, z=0.1)
+        decision = app._strategy.on_bar(sig2, 0.0, 0.0)
+        app._handle_close(bar, sig2, decision)
+        assert len(journal.trades) == 1
+
+
+def dataclasses_replace_sig(sig, **kw):  # type: ignore[no-untyped-def]
+    import dataclasses as dc
+    return dc.replace(sig, **kw)
