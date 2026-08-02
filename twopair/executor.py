@@ -24,6 +24,9 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Chase-level tracing is DEBUG (verbose); decision-grade events go through
+# on_event -> Notifier, which now always mirrors to the local log.
+
 
 @dataclasses.dataclass(frozen=True)
 class LegFill:
@@ -419,6 +422,8 @@ class LiveExecutor:
             except Exception:  # noqa: BLE001 — GTX reject: book moved; re-peg
                 continue
             last_id = client_id
+            logger.debug("chase %s %s qty=%s px=%s id=%s", symbol, side,
+                         remaining, price, client_id)
             deadline = time.time() + self._policy.chase_interval_seconds
             order = self._await_fill(symbol, client_id, deadline)
             if order.get("status") == "FILLED":

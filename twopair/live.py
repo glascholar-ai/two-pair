@@ -209,6 +209,15 @@ class LiveApp:
         self._journal.record_bar(sig, bar.kr, bar.us, bar.fx)
         self._prev_ts = bar.ts
         self._last_sig = sig
+        pos = self._strategy.position
+        logger.info(
+            "bar %s z=%s seg=%s kr=%.2f us=%.2f fx=%.1f pos=%s decision=%s",
+            f"{bar.ts:%m-%d %H:%M}",
+            f"{sig.z:+.2f}" if sig.z is not None else "warmup",
+            sig.seg, bar.kr, bar.us, bar.fx,
+            (f"{pos.side:+d}@{pos.mtm_pct:+.2f}%" if pos is not None
+             else "flat"),
+            decision.action.value)
 
         if decision.z_alert:
             msg = f"|z| alert: z={sig.z:.2f} at {sig.ts}"
@@ -307,6 +316,9 @@ class LiveApp:
         # REPAIR: flatten everything, then run flat.
         result = self._exec.close_all(bar.kr, bar.us)
         for fill in result.fills:
+            logger.info("fill[repair] %s %s qty=%g px=%.4f id=%s",
+                        fill.symbol, fill.side, fill.qty, fill.price,
+                        fill.order_id)
             self._journal.record_fill(bar.ts, fill.symbol, fill.side,
                                       fill.qty, fill.price, fill.order_id,
                                       "repair")
@@ -357,6 +369,9 @@ class LiveApp:
             return
         result = self._exec.open_ratio(side, bar.kr, bar.us)
         for fill in result.fills:
+            logger.info("fill[open] %s %s qty=%g px=%.4f id=%s",
+                        fill.symbol, fill.side, fill.qty, fill.price,
+                        fill.order_id)
             self._journal.record_fill(bar.ts, fill.symbol, fill.side,
                                       fill.qty, fill.price, fill.order_id,
                                       "open")
@@ -373,6 +388,9 @@ class LiveApp:
                       decision: Decision) -> None:
         result = self._exec.close_all(bar.kr, bar.us)
         for fill in result.fills:
+            logger.info("fill[close] %s %s qty=%g px=%.4f id=%s",
+                        fill.symbol, fill.side, fill.qty, fill.price,
+                        fill.order_id)
             self._journal.record_fill(bar.ts, fill.symbol, fill.side,
                                       fill.qty, fill.price, fill.order_id,
                                       "close")

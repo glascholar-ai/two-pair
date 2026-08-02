@@ -24,11 +24,13 @@ class Notifier:
     def send(self, text: str) -> bool:
         """Sends a message; returns True on confirmed delivery.
 
-        Failures are logged, never raised — notification must not be able to
-        take down the trading loop.
+        Every message is ALSO written to the local log first: operational
+        forensics (journalctl) must never depend on Telegram delivery.
+        Failures are logged, never raised — notification must not be able
+        to take down the trading loop.
         """
+        logger.info("notify: %s", text.replace("\n", " | "))
         if not self.enabled:
-            logger.info("notify (telegram off): %s", text)
             return False
         url = f"https://api.telegram.org/bot{self._token}/sendMessage"
         body = urllib.parse.urlencode(

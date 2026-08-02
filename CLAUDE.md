@@ -30,10 +30,15 @@ papi 有 ~1s 读后写延迟、无 countdownCancelAll）、密钥在 GCP Secret 
 
 # 工作规则
 
+- **未经用户明确要求,绝不重新部署或重启交易程序**：包括 deploy.sh、
+  `systemctl restart/stop/start twopair`、以及任何会导致 twopair.service
+  重启的操作。修复类/功能类改动一律：本地实现 + 测试 + git 提交推送后
+  **停下**,向用户说明改动内容与部署必要性,由用户决定是否上线及时机。
+  （历史教训：2026-08-02 两次未攒批的部署重启恰逢策略开平仓,重启通知
+  与交易通知交织,造成"平仓未完成"的误判。）
 - **离线研究不碰远程服务**：回测/参数扫描/分析性改动只在本地跑 + git
-  提交推送；远程部署（deploy.sh / systemctl restart）只在功能或修复变更
-  需要生效时执行，且尽量攒批——每次 restart 都会给用户的 Telegram 推送
-  "loop starting" 造成打扰。部署前自问：这个改动今天必须在生产生效吗？
+  提交推送；每次 restart 都会给用户的 Telegram 推送 "loop starting"
+  造成打扰。
 
 # 代码规范
 
