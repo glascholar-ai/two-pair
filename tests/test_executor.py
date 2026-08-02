@@ -135,6 +135,9 @@ class _FakeClient(BinanceClient):
         self.orders.append({"symbol": symbol, "type": "CANCEL_ALL"})
         return {"code": 200}
 
+    def open_orders(self, symbol: str) -> List[dict]:
+        return []
+
 
 class TestLiveExecutorRepair:
     def test_both_legs_fill(self) -> None:
@@ -539,3 +542,58 @@ class TestRepairAgainstLaggedSnapshots:
         errors: List[str] = []
         ex._repair_to_flat(errors)
         assert any("could not CONFIRM flat" in e for e in errors)
+
+
+
+class TestRepairRequiresConfirmedEmptyBook:
+    """P1: zero positions alone must not confirm repair — an unknown
+    resting order (failed cancel, PM has no dead-man) can fill later."""
+
+    def _policy(self) -> ChasePolicy:
+        return ChasePolicy(style="market", repair_rounds=3,
+                           repair_settle_seconds=0.001,
+                           fill_poll_seconds=0.001)
+
+    def test_persistent_live_order_blocks_confirmation(self) -> None:
+        class _StuckOrder(_FakeClient):
+            def cancel_all_open(self, symbol: str) -> dict:
+                raise ConnectionError("cancel-all down")
+
+            def open_orders(self, symbol: str) -> List[dict]:
+                if symbol == "KR":
+                    return [{"orderId": 42, "status": "NEW"}]
+                return []
+
+        client = _StuckOrder()
+        ex = LiveExecutor(client, 1000.0, "KR", "US",
+                          policy=self._policy())
+        errors: List[str] = []
+        ex._repair_to_flat(errors)
+        assert any("URGENT" in e for e in errors)
+        assert any("live orders remain" in e for e in errors)
+
+    def test_failed_cancel_with_confirmed_empty_book_is_ok(self) -> None:
+        class _CancelDownBookEmpty(_FakeClient):
+            def cancel_all_open(self, symbol: str) -> dict:
+                raise ConnectionError("cancel-all down")
+
+        client = _CancelDownBookEmpty()
+        ex = LiveExecutor(client, 1000.0, "KR", "US",
+                          policy=self._policy())
+        errors: List[str] = []
+        ex._repair_to_flat(errors)
+        # open_orders confirmed empty twice + flat positions -> confirmed.
+        assert not any("URGENT" in e for e in errors)
+
+    def test_unqueryable_book_blocks_confirmation(self) -> None:
+        class _BookUnknown(_FakeClient):
+            def open_orders(self, symbol: str) -> List[dict]:
+                raise ConnectionError("query down")
+
+        client = _BookUnknown()
+        ex = LiveExecutor(client, 1000.0, "KR", "US",
+                          policy=self._policy())
+        errors: List[str] = []
+        ex._repair_to_flat(errors)
+        assert any("URGENT" in e for e in errors)
+        assert any("open-orders check" in e for e in errors)

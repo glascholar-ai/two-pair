@@ -176,6 +176,13 @@ class BinanceClient:
                                               "/papi/v1/um/allOpenOrders"),
                             {"symbol": symbol}, signed=True)
 
+    def open_orders(self, symbol: str) -> List[dict]:
+        """Returns the symbol's currently open (resting) orders."""
+        rows = self.request("GET", self._p("/fapi/v1/openOrders",
+                                           "/papi/v1/um/openOrders"),
+                            {"symbol": symbol}, signed=True)
+        return list(rows) if isinstance(rows, list) else []
+
     def countdown_cancel_all(self, symbol: str, countdown_ms: int) -> dict:
         """Arms the exchange-side dead-man switch for a symbol.
 
@@ -502,9 +509,26 @@ class LiveExecutor:
             for symbol in (self._kr, self._us):
                 try:
                     self._client.cancel_all_open(symbol)
-                except Exception as err:  # noqa: BLE001 — best effort
+                except Exception as err:  # noqa: BLE001 — best effort;
+                    # safety comes from the open-orders CHECK below, not
+                    # from this call succeeding.
                     errors.append(f"repair cancel-all {symbol}: {err}")
             time.sleep(self._policy.repair_settle_seconds)
+            # Authoritative no-live-orders check: a failed cancel with a
+            # CONFIRMED-empty book is safe; an unconfirmed book is not —
+            # an unknown resting order could fill later into an orphan leg
+            # (and PM has no dead-man switch to reap it).
+            orders_clear = True
+            for symbol in (self._kr, self._us):
+                try:
+                    if self._client.open_orders(symbol):
+                        orders_clear = False
+                        errors.append(f"repair: live orders remain on "
+                                      f"{symbol}")
+                except Exception as err:  # noqa: BLE001 — cannot confirm
+                    orders_clear = False
+                    errors.append(f"repair open-orders check {symbol}: "
+                                  f"{err}")
             residual: Dict[str, float] = {}
             for symbol in (self._kr, self._us):
                 try:
@@ -513,14 +537,15 @@ class LiveExecutor:
                     errors.append(f"repair read {symbol}: {err}")
                     amt = math.nan
                 residual[symbol] = amt
-            flat_now = all(
+            positions_flat = all(
                 not math.isnan(a) and abs(a) < self._step(s)
                 for s, a in residual.items())   # sub-step dust counts as flat
-            if flat_now:
+            if positions_flat and orders_clear:
                 consecutive_flat += 1
                 if consecutive_flat >= 2:
-                    return out  # flat on TWO consecutive settled reads: a
-                                # single flat read could itself be lagged
+                    return out  # confirmed on TWO consecutive settled
+                                # reads with a confirmed-empty book: a
+                                # single read could itself be lagged
                 continue
             consecutive_flat = 0
             for symbol, amt in residual.items():
@@ -534,8 +559,9 @@ class LiveExecutor:
                     # expected reduce-only reject when the leg is actually
                     # flat and the snapshot was stale.
                     errors.append(f"repair flatten {symbol}: {err}")
-        errors.append("repair could not CONFIRM flat within "
-                      f"{self._policy.repair_rounds} rounds")
+        errors.append("URGENT: repair could not CONFIRM flat within "
+                      f"{self._policy.repair_rounds} rounds — live orders "
+                      "or positions may remain; manual check required")
         return out
 
     def open_ratio(self, side: int, kr_price: float,
