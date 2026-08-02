@@ -121,13 +121,22 @@ class BinanceClient:
             return json.load(resp)
 
     def market_order(self, symbol: str, side: str, qty: str,
-                     client_id: str) -> dict:
-        """Places a MARKET order (qty must be an exact decimal string)."""
-        return self.request("POST", self._p("/fapi/v1/order",
-                                            "/papi/v1/um/order"), {
+                     client_id: str, reduce_only: bool = False) -> dict:
+        """Places a MARKET order (qty must be an exact decimal string).
+
+        reduce_only orders can shrink a position but never open or flip
+        one — the exchange rejects them otherwise. Repair paths rely on
+        this to stay safe against lagged position snapshots.
+        """
+        params = {
             "symbol": symbol, "side": side, "type": "MARKET",
             "quantity": qty, "newClientOrderId": client_id,
-        }, signed=True)
+        }
+        if reduce_only:
+            params["reduceOnly"] = "true"
+        return self.request("POST", self._p("/fapi/v1/order",
+                                            "/papi/v1/um/order"),
+                            params, signed=True)
 
     def limit_order_post_only(self, symbol: str, side: str, qty: str,
                               price: str, client_id: str) -> dict:
@@ -263,6 +272,12 @@ def format_step(value: float, step: float) -> str:
     return format(units * d_step, "f")
 
 
+# Order states after which nothing more can execute. A lagged snapshot
+# showing NEW/PARTIALLY_FILLED proves nothing — the order may still trade.
+TERMINAL_ORDER_STATES = frozenset(
+    {"CANCELED", "FILLED", "EXPIRED", "REJECTED"})
+
+
 @dataclasses.dataclass(frozen=True)
 class ChasePolicy:
     """Passive-execution parameters for the BBO chase loop."""
@@ -271,6 +286,8 @@ class ChasePolicy:
     chase_interval_seconds: float = 4.0
     max_chases: int = 5
     fill_poll_seconds: float = 0.5
+    repair_rounds: int = 4             # cancel->settle->read->flatten loops
+    repair_settle_seconds: float = 1.5 # papi read-after-write settle time
 
 
 class LiveExecutor:
@@ -310,11 +327,11 @@ class LiveExecutor:
         return format_step(price, float(self._filters_for(symbol)[1]))
 
     def _market(self, symbol: str, side: str, qty: float,
-                purpose: str) -> LegFill:
+                purpose: str, reduce_only: bool = False) -> LegFill:
         client_id = f"tp-{purpose}-{uuid.uuid4().hex[:10]}"
         resp = self._client.market_order(symbol, side,
                                          self._fmt_qty(symbol, qty),
-                                         client_id)
+                                         client_id, reduce_only)
         price = float(resp.get("avgPrice") or 0.0) or float(
             resp.get("price") or 0.0)
         # papi acks market orders before the fill lands: executedQty can be
@@ -359,13 +376,23 @@ class LiveExecutor:
         try:
             order = self._client.cancel_order(symbol, client_id)
         except Exception:  # noqa: BLE001 — cancel/fill race or papi lag
-            for _ in range(4):
+            order = None
+        if order is None or order.get("status") not in TERMINAL_ORDER_STATES:
+            # Poll until the order reaches a TERMINAL state. A lagged
+            # NEW/PARTIALLY_FILLED snapshot must not be trusted: the order
+            # could still execute after we re-quote.
+            for _ in range(6):
                 try:
-                    order = self._client.query_order(symbol, client_id)
-                    break
-                except Exception:  # noqa: BLE001
-                    time.sleep(self._policy.fill_poll_seconds)
-        if order is None:
+                    candidate = self._client.query_order(symbol, client_id)
+                    if candidate.get("status") in TERMINAL_ORDER_STATES:
+                        order = candidate
+                        break
+                except Exception:  # noqa: BLE001 — keep polling
+                    pass
+                time.sleep(self._policy.fill_poll_seconds)
+            else:
+                return None
+        if order is None or order.get("status") not in TERMINAL_ORDER_STATES:
             return None
         qty = float(order.get("executedQty") or 0.0)
         price = float(order.get("avgPrice") or 0.0)
@@ -454,25 +481,56 @@ class LiveExecutor:
         return PairExecution(False, fills, "; ".join(errors))
 
     def _repair_to_flat(self, errors: List[str]) -> List[LegFill]:
-        """Cancels all resting orders and flattens both legs by position.
+        """Drives both legs to a CONFIRMED flat state.
 
-        Residual exposure from fills that land after this snapshot (papi
-        lag) is caught by the next cycle's position sync.
+        Bounded loop of cancel-all -> settle wait (papi read-after-write
+        lag) -> read positions -> reduce-only market flatten -> re-read.
+        reduce_only makes lagged snapshots harmless: a stale reading of an
+        already-closed leg produces an order the exchange rejects instead
+        of a reverse position. Exits only when a FRESH read shows both
+        legs at zero, or after repair_rounds attempts (then loudly noted;
+        the per-cycle sync keeps reconciling).
         """
         out: List[LegFill] = []
-        for symbol in (self._kr, self._us):
-            try:
-                self._client.cancel_all_open(symbol)
-            except Exception as err:  # noqa: BLE001 — best effort
-                errors.append(f"repair cancel-all {symbol}: {err}")
-            try:
-                amt = self._client.position_amt(symbol)
-                if abs(amt) > 0:
+        consecutive_flat = 0
+        for _ in range(self._policy.repair_rounds):
+            for symbol in (self._kr, self._us):
+                try:
+                    self._client.cancel_all_open(symbol)
+                except Exception as err:  # noqa: BLE001 — best effort
+                    errors.append(f"repair cancel-all {symbol}: {err}")
+            time.sleep(self._policy.repair_settle_seconds)
+            residual: Dict[str, float] = {}
+            for symbol in (self._kr, self._us):
+                try:
+                    amt = self._client.position_amt(symbol)
+                except Exception as err:  # noqa: BLE001
+                    errors.append(f"repair read {symbol}: {err}")
+                    amt = math.nan
+                residual[symbol] = amt
+            flat_now = all(
+                not math.isnan(a) and abs(a) < self._step(s)
+                for s, a in residual.items())   # sub-step dust counts as flat
+            if flat_now:
+                consecutive_flat += 1
+                if consecutive_flat >= 2:
+                    return out  # flat on TWO consecutive settled reads: a
+                                # single flat read could itself be lagged
+                continue
+            consecutive_flat = 0
+            for symbol, amt in residual.items():
+                if math.isnan(amt) or abs(amt) < self._step(symbol):
+                    continue
+                try:
                     out.append(self._market(
                         symbol, "SELL" if amt > 0 else "BUY", abs(amt),
-                        "repair"))
-            except Exception as err:  # noqa: BLE001
-                errors.append(f"repair flatten {symbol}: {err}")
+                        "repair", reduce_only=True))
+                except Exception as err:  # noqa: BLE001 — includes the
+                    # expected reduce-only reject when the leg is actually
+                    # flat and the snapshot was stale.
+                    errors.append(f"repair flatten {symbol}: {err}")
+        errors.append("repair could not CONFIRM flat within "
+                      f"{self._policy.repair_rounds} rounds")
         return out
 
     def open_ratio(self, side: int, kr_price: float,

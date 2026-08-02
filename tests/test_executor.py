@@ -18,8 +18,10 @@ def _is_exact_decimal(s: str) -> bool:
 
 
 FAST = ChasePolicy(style="bbo", chase_interval_seconds=0.01, max_chases=3,
-                   fill_poll_seconds=0.001)
-MARKET = ChasePolicy(style="market")
+                   fill_poll_seconds=0.001, repair_rounds=3,
+                   repair_settle_seconds=0.001)
+MARKET = ChasePolicy(style="market", repair_rounds=3,
+                     repair_settle_seconds=0.001)
 
 
 class TestRoundStep:
@@ -68,13 +70,16 @@ class _FakeClient(BinanceClient):
         self._working: Dict[str, dict] = {}
 
     def market_order(self, symbol: str, side: str, qty: str,
-                     client_id: str) -> dict:
+                     client_id: str, reduce_only: bool = False) -> dict:
         assert _is_exact_decimal(qty), f"dirty qty string: {qty!r}"
         if symbol in self.fail:
             raise ConnectionError(f"simulated reject for {symbol}")
         fqty = float(qty)
+        pos = self.positions.get(symbol, 0.0)
+        if reduce_only and (pos == 0.0 or (side == "BUY") == (pos > 0)):
+            raise ConnectionError("ReduceOnly Order is rejected")
         self.orders.append({"symbol": symbol, "side": side, "qty": fqty,
-                            "type": "MARKET"})
+                            "type": "MARKET", "reduceOnly": reduce_only})
         self.market_calls.append(self.orders[-1])
         delta = fqty if side == "BUY" else -fqty
         self.positions[symbol] = self.positions.get(symbol, 0.0) + delta
@@ -320,8 +325,10 @@ class TestPapiLagTolerance:
 
     def test_market_ack_with_zero_executed_qty(self) -> None:
         class _ZeroAck(_FakeClient):
-            def market_order(self, symbol, side, qty, client_id):  # type: ignore[override]
-                resp = super().market_order(symbol, side, qty, client_id)
+            def market_order(self, symbol, side, qty, client_id,  # type: ignore[override]
+                             reduce_only: bool = False):
+                resp = super().market_order(symbol, side, qty, client_id,
+                                            reduce_only)
                 resp["executedQty"] = "0.00"   # papi async-fill ack
                 return resp
 
@@ -368,10 +375,11 @@ class TestPartialFillThenException:
 
     class _PartialThenBoom(_FakeClient):
         def market_order(self, symbol: str, side: str, qty: str,
-                         client_id: str) -> dict:
-            if symbol == "KR":
+                         client_id: str, reduce_only: bool = False) -> dict:
+            if symbol == "KR" and not reduce_only:
                 raise ConnectionError("market reject")   # fallback fails
-            return super().market_order(symbol, side, qty, client_id)
+            return super().market_order(symbol, side, qty, client_id,
+                                        reduce_only)
 
     def test_partial_fill_is_flattened(self) -> None:
         # KR: chase partially fills 50% then rests -> market fallback raises
@@ -383,15 +391,14 @@ class TestPartialFillThenException:
         res = ex.open_ratio(1, 1100.0, 145.0)
         assert not res.ok
         # The hidden partial KR long and the US short must BOTH be gone —
-        # repair reads positionRisk, not the fills list.
-        # (KR flatten SELL also fails in this fake -> stays exposed, but the
-        # attempt must have been made; US must be flat.)
-        us_flat = client.position_amt("US") == pytest.approx(0.0)
-        kr_flatten_attempted = any(
-            o.get("symbol") == "KR" and o.get("type") == "CANCEL_ALL"
-            for o in client.orders)
-        assert us_flat and kr_flatten_attempted
-        assert "repair flatten KR" in res.error
+        # repair reads positionRisk, not the fills list, and flattens with
+        # reduce-only orders (which this fake allows even when plain KR
+        # markets are rejected).
+        assert client.position_amt("KR") == pytest.approx(0.0, abs=1e-3)
+        assert client.position_amt("US") == pytest.approx(0.0, abs=1e-3)
+        repair_orders = [o for o in client.market_calls
+                         if o.get("reduceOnly")]
+        assert repair_orders, "repair must use reduce-only orders"
 
     def test_partial_fill_flattened_when_market_recovers(self) -> None:
         class _PartialOnce(_FakeClient):
@@ -400,11 +407,13 @@ class TestPartialFillThenException:
                 self._first = True
 
             def market_order(self, symbol: str, side: str, qty: str,
-                             client_id: str) -> dict:
+                             client_id: str,
+                             reduce_only: bool = False) -> dict:
                 if symbol == "KR" and self._first:
                     self._first = False
                     raise ConnectionError("market reject")
-                return super().market_order(symbol, side, qty, client_id)
+                return super().market_order(symbol, side, qty, client_id,
+                                            reduce_only)
 
         client = _PartialOnce(limit_plan={"KR": [("partial", 0.5), "none",
                                                  "none"],
@@ -416,3 +425,117 @@ class TestPartialFillThenException:
         # dust and gets reconciled by the next position sync.
         assert client.position_amt("KR") == pytest.approx(0.0, abs=1e-3)
         assert client.position_amt("US") == pytest.approx(0.0, abs=1e-3)
+
+
+class TestReapTerminalStates:
+    """P1: only terminal order states end a reap; lagged NEW must not."""
+
+    class _StaleThenTerminal(_FakeClient):
+        """cancel raises; queries return stale NEW twice, then CANCELED."""
+
+        def __init__(self, **kw) -> None:
+            super().__init__(**kw)
+            self.query_count = 0
+
+        def cancel_order(self, symbol: str, client_id: str) -> dict:
+            raise ConnectionError("cancel timeout")
+
+        def query_order(self, symbol: str, client_id: str) -> dict:
+            self.query_count += 1
+            order = dict(self._working[client_id])
+            if self.query_count <= 2:
+                order["status"] = "NEW"          # lagged snapshot
+                order["executedQty"] = 0.0
+            else:
+                order["status"] = "CANCELED"
+            return order
+
+    class _ForeverNew(_FakeClient):
+        def cancel_order(self, symbol: str, client_id: str) -> dict:
+            raise ConnectionError("cancel timeout")
+
+        def query_order(self, symbol: str, client_id: str) -> dict:
+            order = dict(self._working[client_id])
+            order["status"] = "NEW"
+            return order
+
+    def test_waits_through_stale_snapshots(self) -> None:
+        client = self._StaleThenTerminal(
+            limit_plan={"KR": ["none", "fill"], "US": ["fill"]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert res.ok                       # reap saw CANCELED eventually
+        assert client.query_count >= 3      # did not stop on stale NEW
+
+    def test_never_terminal_aborts_leg(self) -> None:
+        client = self._ForeverNew(limit_plan={"KR": ["none"], "US": ["fill"]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=FAST)
+        res = ex.open_ratio(1, 1100.0, 145.0)
+        assert not res.ok
+        assert "state unknown" in res.error
+        kr_limits = [o for o in client.orders
+                     if o.get("symbol") == "KR" and o.get("type") == "LIMIT"]
+        assert len(kr_limits) == 1          # no blind re-quote
+
+
+class _StaleReads(_FakeClient):
+    """position_amt serves queued stale readings before real state."""
+
+    def __init__(self, stale: Dict[str, List[float]], **kw) -> None:
+        super().__init__(**kw)
+        self._stale = {k: list(v) for k, v in stale.items()}
+
+    def position_amt(self, symbol: str) -> float:
+        queue = self._stale.get(symbol)
+        if queue:
+            return queue.pop(0)
+        return super().position_amt(symbol)
+
+
+class TestRepairAgainstLaggedSnapshots:
+    """P1: repair must confirm flat and never open reverse positions."""
+
+    def _policy(self) -> ChasePolicy:
+        return ChasePolicy(style="market", repair_rounds=5,
+                           repair_settle_seconds=0.001,
+                           fill_poll_seconds=0.001)
+
+    def test_repair_direct_stale_then_flat(self) -> None:
+        client = _StaleReads({"KR": [0.9]})
+        ex = LiveExecutor(client, 1000.0, "KR", "US",
+                          policy=self._policy())
+        errors: List[str] = []
+        fills = ex._repair_to_flat(errors)
+        # reduce-only on an actually-flat leg is rejected: nothing executed.
+        assert fills == []
+        assert client.position_amt("KR") == pytest.approx(0.0)
+        assert all(o.get("reduceOnly") for o in client.market_calls)
+
+    def test_repair_catches_late_appearing_fill(self) -> None:
+        # Open failed; the leg's fill lands AFTER the first repair read
+        # (papi lag): first read 0.0 (stale), later reads show 0.9. The
+        # two-consecutive-flat-reads rule prevents a premature "flat"
+        # verdict; the late leg is found and flattened.
+        client = _StaleReads({"KR": [0.0]})
+        client.positions["KR"] = 0.9           # the true, late-visible leg
+        ex = LiveExecutor(client, 1000.0, "KR", "US",
+                          policy=self._policy())
+        errors: List[str] = []
+        ex._repair_to_flat(errors)
+        assert client.position_amt("KR") == pytest.approx(0.0, abs=1e-3)
+
+    def test_repair_gives_up_loudly(self) -> None:
+        class _NeverFlat(_FakeClient):
+            def position_amt(self, symbol: str) -> float:
+                return 0.9 if symbol == "KR" else 0.0
+
+            def market_order(self, symbol, side, qty, client_id,  # type: ignore[override]
+                             reduce_only: bool = False):
+                raise ConnectionError("exchange down")
+
+        client = _NeverFlat()
+        ex = LiveExecutor(client, 1000.0, "KR", "US",
+                          policy=self._policy())
+        errors: List[str] = []
+        ex._repair_to_flat(errors)
+        assert any("could not CONFIRM flat" in e for e in errors)
