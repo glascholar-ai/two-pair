@@ -85,7 +85,7 @@ def exchange_section(cfg: Config) -> None:
                      - entry_ts).total_seconds() / 3600
             held = f"  held={hours:.1f}h"
         print(f"exchange : kr={view.kr_qty:+g}  us={view.us_qty:+g}  "
-              f"pnl={view.pnl_pct:+.2f}%{held}")
+              f"pnl={view.pnl_usd:+.2f}USDT{held}")
     pnl = executor.realized_pnl_today_pct(dt.datetime.now(dt.timezone.utc))
     print(f"today    : realized {pnl:+.2f}% of leg notional")
 

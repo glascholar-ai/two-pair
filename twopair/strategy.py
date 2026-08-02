@@ -46,6 +46,7 @@ class Position:
     entry_z: float
     entry_seg: str
     side: int          # +1 long ratio, -1 short ratio
+    leg_notional_usdt: float = 0.0   # actual per-leg size (MTM denominator)
     mtm_pct: float = 0.0
     max_abs_z: float = 0.0
     max_mtm_pct: float = 0.0
@@ -111,22 +112,29 @@ class Strategy:
         self._pos = None
 
     def adopt_position(self, side: int, entry_ts: dt.datetime,
-                       mtm_pct: float, seg: str) -> None:
+                       mtm_pct: float, seg: str,
+                       leg_notional_usdt: float) -> None:
         """Installs a position discovered on the exchange (recovery/sync).
 
         Signal-space entry metadata (entry_lr, entry_z) is unknowable for an
         adopted position and is zeroed; it is bookkeeping only and drives no
-        decision.
+        decision. leg_notional_usdt must be the position's ACTUAL per-leg
+        size — it is the denominator for MTM percentages, so the stop fires
+        at the same real-money fraction regardless of adopted size.
 
         Raises:
-            ValueError: If a position is already held or side is invalid.
+            ValueError: If a position is already held, side is invalid, or
+                the notional is not positive.
         """
         if self._pos is not None:
             raise ValueError("cannot adopt: position already held")
         if side not in (1, -1):
             raise ValueError(f"invalid side {side}")
+        if leg_notional_usdt <= 0:
+            raise ValueError(f"invalid leg notional {leg_notional_usdt}")
         self._pos = Position(entry_ts=entry_ts, entry_lr=0.0, entry_z=0.0,
-                             entry_seg=seg, side=side, mtm_pct=mtm_pct)
+                             entry_seg=seg, side=side, mtm_pct=mtm_pct,
+                             leg_notional_usdt=leg_notional_usdt)
         self._alerted = False
 
     def sync_mtm(self, mtm_pct: float) -> None:
@@ -186,6 +194,7 @@ class Strategy:
                 self._pos = Position(entry_ts=sig.ts, entry_lr=sig.lr,
                                      entry_z=sig.z, entry_seg=sig.seg,
                                      side=-1 if sig.z > 0 else 1,
+                                     leg_notional_usdt=cfg.leg_notional_usdt,
                                      max_abs_z=abs_z)
                 self._alerted = False
                 return Decision(Action.OPEN, side=self._pos.side)

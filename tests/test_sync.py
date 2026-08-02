@@ -17,14 +17,11 @@ DUST, TOL = 10.0, 5.0
 
 
 def view(kr_qty: float, us_qty: float, pnl: float = 0.0) -> PairView:
-    return PairView(kr_qty=kr_qty, us_qty=us_qty, pnl_pct=pnl)
+    return PairView(kr_qty=kr_qty, us_qty=us_qty, pnl_usd=pnl)
 
 
-def classify(v: PairView, local_side: int,
-             expected_notional: float = 1000.0,
-             max_ratio: float = 2.0) -> tuple[str, int, str]:
-    return classify_sync(v, KR_PX, US_PX, local_side, DUST, TOL,
-                         expected_notional, max_ratio)
+def classify(v: PairView, local_side: int) -> tuple[str, int, str]:
+    return classify_sync(v, KR_PX, US_PX, local_side, DUST, TOL)
 
 
 class TestClassifySync:
@@ -72,28 +69,21 @@ class TestClassifySync:
         action, _, _ = classify(view(0.909, -6.76), 1)
         assert action == SyncAction.TRACK
 
-    def test_adopt_refused_for_oversized_pair(self) -> None:
-        # ~5x the configured notional: healthy pair but stop %% would be
-        # mis-scaled -> REPAIR, not ADOPT.  (P2: adopt size gate)
-        action, _, detail = classify(view(4.5, -34.5), 0)
-        assert action == SyncAction.REPAIR and "size anomaly" in detail
-
-    def test_adopt_refused_for_undersized_pair(self) -> None:
-        # ~1/5 of configured notional.
-        action, _, detail = classify(view(0.18, -1.38), 0)
-        assert action == SyncAction.REPAIR and "size anomaly" in detail
-
-    def test_adopt_ok_within_size_ratio(self) -> None:
-        # ~1.5x configured notional, ratio limit 2.0 -> adoptable.
-        action, side, _ = classify(view(1.36, -10.34), 0)
+    def test_any_size_healthy_pair_adopts(self) -> None:
+        # Size is NOT a classification concern: resize (trim / keep) is
+        # decided after adoption. 5x and 1/5x pairs both adopt.
+        action, side, _ = classify(view(4.5, -34.5), 0)
         assert action == SyncAction.ADOPT and side == 1
+        action2, side2, _ = classify(view(0.18, -1.38), 0)
+        assert action2 == SyncAction.ADOPT and side2 == 1
 
 
 class TestStrategyAdoption:
     def test_adopt_and_sync_mtm(self) -> None:
         strat = Strategy(Config())
         ts = dt.datetime(2026, 7, 6, 1, 0, tzinfo=UTC)
-        strat.adopt_position(1, ts, mtm_pct=-0.8, seg="KR_open")
+        strat.adopt_position(1, ts, mtm_pct=-0.8, seg="KR_open",
+                             leg_notional_usdt=1000.0)
         pos = strat.position
         assert pos is not None and pos.side == 1
         assert pos.mtm_pct == pytest.approx(-0.8)
@@ -103,18 +93,20 @@ class TestStrategyAdoption:
     def test_adopt_rejects_double(self) -> None:
         strat = Strategy(Config())
         ts = dt.datetime(2026, 7, 6, 1, 0, tzinfo=UTC)
-        strat.adopt_position(1, ts, 0.0, "wknd")
+        strat.adopt_position(1, ts, 0.0, "wknd", 1000.0)
         with pytest.raises(ValueError):
-            strat.adopt_position(-1, ts, 0.0, "wknd")
+            strat.adopt_position(-1, ts, 0.0, "wknd", 1000.0)
 
     def test_adopt_rejects_bad_side(self) -> None:
         strat = Strategy(Config())
         with pytest.raises(ValueError):
-            strat.adopt_position(0, dt.datetime.now(UTC), 0.0, "wknd")
+            strat.adopt_position(0, dt.datetime.now(UTC), 0.0, "wknd", 1000.0)
+        with pytest.raises(ValueError):
+            strat.adopt_position(1, dt.datetime.now(UTC), 0.0, "wknd", 0.0)
 
     def test_drop_records_no_trade(self) -> None:
         strat = Strategy(Config())
-        strat.adopt_position(1, dt.datetime.now(UTC), 0.0, "wknd")
+        strat.adopt_position(1, dt.datetime.now(UTC), 0.0, "wknd", 1000.0)
         strat.drop_position()
         assert strat.position is None and strat.trades == []
 
@@ -133,7 +125,8 @@ class TestStrategyAdoption:
         from twopair.signal import SignalState
         strat = Strategy(Config(mtm_stop_pct=2.5))
         ts = dt.datetime(2026, 7, 6, 1, 0, tzinfo=UTC)
-        strat.adopt_position(1, ts, mtm_pct=-2.0, seg="KR_open")
+        strat.adopt_position(1, ts, mtm_pct=-2.0, seg="KR_open",
+                             leg_notional_usdt=200.0)
         strat.sync_mtm(-2.6)  # exchange truth breaches the stop
         sig = SignalState(ts=ts + dt.timedelta(minutes=5), lr=0.0,
                           seg="KR_open", mu=0.0, sd=1.0, z=1.0)
@@ -200,15 +193,14 @@ class TestPositionView:
         assert v is not None
         assert v.kr_qty == pytest.approx(0.9)
         assert v.us_qty == pytest.approx(-6.9)
-        # (-12 + 4 + 3*2 legs) / 1000 * 100
-        assert v.pnl_pct == pytest.approx((-12.0 + 4.0 + 6.0) / 1000 * 100)
+        assert v.pnl_usd == pytest.approx(-12.0 + 4.0 + 6.0)  # raw USDT
         assert client.income_calls == ["KR", "US"]
 
     def test_live_flat_skips_income(self) -> None:
         client = _ViewClient([], funding=99.0)
         ex = LiveExecutor(client, 1000.0, "KR", "US")  # type: ignore[arg-type]
         v = ex.position_view(dt.datetime(2026, 8, 1, tzinfo=UTC))
-        assert v is not None and v.pnl_pct == pytest.approx(0.0)
+        assert v is not None and v.pnl_usd == pytest.approx(0.0)
         assert client.income_calls == []
 
 
@@ -343,7 +335,7 @@ class TestDailyDigest:
         fake_now = dt.datetime(2026, 8, 3, 2, 0, tzinfo=UTC)
         monkeypatch.setattr(livemod, "_utcnow", lambda: fake_now)
         app._strategy.adopt_position(
-            -1, fake_now - dt.timedelta(hours=3), -0.75, "KR_open")
+            -1, fake_now - dt.timedelta(hours=3), -0.75, "KR_open", 1000.0)
         app._blocked_entries = 2
         app._maybe_send_digest()
         msg = notifier.sent[0]
@@ -438,7 +430,7 @@ class TestLiveFaultInjection:
         app, execu, journal = _mk_app(close_ok=False)
         bar, sig = self._bar_and_sig()
         app._strategy.adopt_position(1, bar.ts - dt.timedelta(hours=1),
-                                     0.0, "KR_open")
+                                     0.0, "KR_open", 1000.0)
         sig2 = dataclasses_replace_sig(sig, z=0.1)
         decision = app._strategy.on_bar(sig2, 0.0, 0.0)
         assert decision.action.value == "close"
@@ -451,7 +443,7 @@ class TestLiveFaultInjection:
         app, _execu, journal = _mk_app(close_ok=True)
         bar, sig = self._bar_and_sig()
         app._strategy.adopt_position(1, bar.ts - dt.timedelta(hours=1),
-                                     1.0, "KR_open")
+                                     1.0, "KR_open", 1000.0)
         sig2 = dataclasses_replace_sig(sig, z=0.1)
         decision = app._strategy.on_bar(sig2, 0.0, 0.0)
         app._handle_close(bar, sig2, decision)
@@ -461,3 +453,23 @@ class TestLiveFaultInjection:
 def dataclasses_replace_sig(sig, **kw):  # type: ignore[no-untyped-def]
     import dataclasses as dc
     return dc.replace(sig, **kw)
+
+
+
+class TestActualNotionalScaling:
+    def test_stop_fires_at_real_fraction_of_adopted_size(self) -> None:
+        # 200-USDT position under 1000-USDT config: -6 USDT is -3% of the
+        # ACTUAL size -> stop (2.5%) must fire. Under the old config-based
+        # normalization it would have read as -0.6% and sailed on.
+        from twopair.signal import SignalState
+        strat = Strategy(Config(mtm_stop_pct=2.5, leg_notional_usdt=1000.0))
+        ts = dt.datetime(2026, 7, 6, 1, 0, tzinfo=UTC)
+        strat.adopt_position(1, ts, 0.0, "KR_open", leg_notional_usdt=200.0)
+        pos = strat.position
+        assert pos is not None
+        strat.sync_mtm(-6.0 / pos.leg_notional_usdt * 100.0)
+        sig = SignalState(ts=ts + dt.timedelta(minutes=5), lr=0.0,
+                          seg="KR_open", mu=0.0, sd=1.0, z=1.0)
+        decision = strat.on_bar(sig, 0.0, 0.0)
+        assert decision.trade is not None
+        assert decision.trade.reason.value == "stop"

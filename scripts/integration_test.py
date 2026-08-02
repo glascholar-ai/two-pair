@@ -112,7 +112,7 @@ def round_trip_test(executor: LiveExecutor, client: BinanceClient,
     view = executor.position_view(None)
     check("exchange shows long KR / short US",
           view.kr_qty > 0 and view.us_qty < 0,
-          f"kr={view.kr_qty} us={view.us_qty} pnl={view.pnl_pct:+.3f}%")
+          f"kr={view.kr_qty} us={view.us_qty} pnl={view.pnl_usd:+.3f}USDT")
     result = executor.close_all(kr_bid, us_bid)
     check("close_all ok", result.ok, f"err={result.error}")
     time.sleep(3)

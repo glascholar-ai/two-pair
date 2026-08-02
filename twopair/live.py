@@ -51,9 +51,8 @@ class SyncAction:
 
 
 def classify_sync(view: PairView, kr_price: float, us_price: float,
-                  local_side: int, dust_usdt: float, tolerance_pct: float,
-                  expected_leg_notional: float,
-                  max_size_ratio: float) -> tuple[str, int, str]:
+                  local_side: int, dust_usdt: float,
+                  tolerance_pct: float) -> tuple[str, int, str]:
     """Classifies exchange state against local state (pure function).
 
     Args:
@@ -82,14 +81,6 @@ def classify_sync(view: PairView, kr_price: float, us_price: float,
         if mismatch <= tolerance_pct:
             side = 1 if view.kr_qty > 0 else -1
             if local_side == 0:
-                avg_notional = (abs(kr_notional) + abs(us_notional)) / 2.0
-                ratio = avg_notional / max(expected_leg_notional, 1e-9)
-                if not (1.0 / max_size_ratio <= ratio <= max_size_ratio):
-                    return (SyncAction.REPAIR, 0,
-                            f"size anomaly: leg notional {avg_notional:.0f} "
-                            f"vs configured {expected_leg_notional:.0f} "
-                            f"(ratio {ratio:.2f}) — stop %% would be "
-                            "mis-scaled; flattening")
                 return SyncAction.ADOPT, side, f"mismatch {mismatch:.1f}%"
             if local_side == side:
                 return SyncAction.TRACK, side, ""
@@ -297,12 +288,13 @@ class LiveApp:
         local_side = pos.side if pos is not None else 0
         action, side, detail = classify_sync(
             view, bar.kr, bar.us, local_side,
-            self._cfg.dust_usdt, self._cfg.sync_tolerance_pct,
-            self._cfg.leg_notional_usdt, self._cfg.adopt_size_ratio)
+            self._cfg.dust_usdt, self._cfg.sync_tolerance_pct)
         if action == SyncAction.NONE:
             return True
         if action == SyncAction.TRACK:
-            self._strategy.sync_mtm(view.pnl_pct)
+            assert pos is not None
+            self._strategy.sync_mtm(
+                view.pnl_usd / pos.leg_notional_usdt * 100.0)
             return True
         if action == SyncAction.ADOPT:
             self._adopt(view, bar, side, detail)
@@ -331,7 +323,35 @@ class LiveApp:
 
     def _adopt(self, view: PairView, bar: Bar, side: int,
                detail: str) -> None:
-        """Installs an exchange position the strategy did not know about."""
+        """Installs an exchange position, resizing DOWN if over config.
+
+        Config-notional changes are a normal operation: an oversized pair
+        is trimmed to the configured size with reduce-only orders (no full
+        flatten-and-reopen churn); an undersized pair is adopted as-is and
+        runs its course — the next fresh entry uses the new size. The MTM
+        denominator is always the position's ACTUAL leg notional, so the
+        stop fires at the same real-money fraction at any size.
+        """
+        cfg = self._cfg
+        measured = (abs(view.kr_qty) * bar.kr
+                    + abs(view.us_qty) * bar.us) / 2.0
+        leg_notional = measured
+        if measured > cfg.leg_notional_usdt * (
+                1.0 + cfg.sync_tolerance_pct / 100.0):
+            fills = self._exec.trim_to_notional(cfg.leg_notional_usdt,
+                                                bar.kr, bar.us)
+            for fill in fills:
+                logger.info("fill[trim] %s %s qty=%g px=%.4f id=%s",
+                            fill.symbol, fill.side, fill.qty, fill.price,
+                            fill.order_id)
+                self._journal.record_fill(bar.ts, fill.symbol, fill.side,
+                                          fill.qty, fill.price,
+                                          fill.order_id, "trim")
+            leg_notional = cfg.leg_notional_usdt
+            self._notify.send(
+                f"trimmed adopted position {measured:.0f} -> "
+                f"{leg_notional:.0f} USDT/leg ({len(fills)} reduce-only "
+                "fills)")
         entry_ts: Optional[dt.datetime] = None
         try:
             entry_ts = self._exec.estimate_entry_ts()
@@ -339,11 +359,12 @@ class LiveApp:
             logger.warning("entry-ts reconstruction failed: %s", err)
         if entry_ts is None:
             entry_ts = _utcnow()
-        self._strategy.adopt_position(side, entry_ts, view.pnl_pct,
-                                      segment_of(bar.ts))
+        mtm_pct = view.pnl_usd / leg_notional * 100.0
+        self._strategy.adopt_position(side, entry_ts, mtm_pct,
+                                      segment_of(bar.ts), leg_notional)
         msg = (f"adopted exchange position side={side:+d} "
-               f"pnl={view.pnl_pct:+.2f}% entry~{entry_ts:%m-%d %H:%M} "
-               f"({detail})")
+               f"leg~{leg_notional:.0f}USDT pnl={mtm_pct:+.2f}% "
+               f"entry~{entry_ts:%m-%d %H:%M} ({detail})")
         logger.warning(msg)
         self._notify.send(msg)
 

@@ -597,3 +597,38 @@ class TestRepairRequiresConfirmedEmptyBook:
         ex._repair_to_flat(errors)
         assert any("URGENT" in e for e in errors)
         assert any("open-orders check" in e for e in errors)
+
+
+
+class TestTrimToNotional:
+    def test_trims_oversized_legs_reduce_only(self) -> None:
+        client = _FakeClient()
+        client.positions["KR"] = 0.90     # ~990 USDT @1100
+        client.positions["US"] = -6.90    # ~1000 USDT @145
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=MARKET)
+        fills = ex.trim_to_notional(200.0, 1100.0, 145.0)
+        assert len(fills) == 2
+        assert all(o.get("reduceOnly") for o in client.market_calls)
+        # fake step is 0.001: target qtys 200/1100 -> 0.181 ; 200/145 -> 1.379
+        assert client.position_amt("KR") == pytest.approx(0.181, abs=1e-9)
+        assert client.position_amt("US") == pytest.approx(-1.379, abs=1e-9)
+
+    def test_no_trim_when_at_or_below_target(self) -> None:
+        client = _FakeClient()
+        client.positions["KR"] = 0.17
+        client.positions["US"] = -1.34
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=MARKET)
+        fills = ex.trim_to_notional(1000.0, 1100.0, 145.0)
+        assert fills == []
+        assert client.position_amt("KR") == pytest.approx(0.17)
+
+    def test_trim_survives_leg_errors(self) -> None:
+        client = _FakeClient(fail_symbols={"KR"})
+        client.positions["KR"] = 0.90
+        client.positions["US"] = -6.90
+        events: List[str] = []
+        ex = LiveExecutor(client, 1000.0, "KR", "US", policy=MARKET,
+                          on_event=events.append)
+        fills = ex.trim_to_notional(200.0, 1100.0, 145.0)
+        assert len(fills) == 1            # US trimmed despite KR failure
+        assert any("trim KR failed" in e for e in events)

@@ -52,13 +52,15 @@ class PairExecution:
 class PairView:
     """Exchange truth for the pair (plan-A per-cycle sync).
 
-    pnl_pct = (sum of unrealized PnL + funding income since entry_ts)
-    as a percentage of single-leg notional.
+    pnl_usd = sum of unrealized PnL + funding income since entry_ts, in
+    USDT. Percentage normalization happens in the live layer against the
+    POSITION'S actual leg notional (not the configured one) so the MTM
+    stop scales correctly for adopted positions of any size.
     """
 
     kr_qty: float   # signed position amount, KR leg
     us_qty: float   # signed position amount, US leg
-    pnl_pct: float
+    pnl_usd: float
 
 
 PAPI_BASE = "https://papi.binance.com"
@@ -668,6 +670,37 @@ class LiveExecutor:
             start_ms = int(entry_ts.timestamp() * 1000)
             for symbol in (self._kr, self._us):
                 funding += self._client.funding_income(symbol, start_ms)
-        pnl_pct = (unreal + funding) / self._notional * 100.0
         return PairView(kr_qty=qty[self._kr], us_qty=qty[self._us],
-                        pnl_pct=pnl_pct)
+                        pnl_usd=unreal + funding)
+
+    def trim_to_notional(self, target_notional: float, kr_price: float,
+                         us_price: float) -> List[LegFill]:
+        """Reduces both legs to the target per-leg notional (config resize).
+
+        Used when an adopted position is LARGER than the configured size:
+        the excess of each leg is closed with reduce-only market orders —
+        the exchange guarantees this can only shrink exposure. Undersized
+        positions are never topped up (adding exposure mid-trade at a
+        stale signal level is not resizing, it is a new trade).
+        """
+        fills: List[LegFill] = []
+        for symbol, price in ((self._kr, kr_price), (self._us, us_price)):
+            step = self._step(symbol)
+            try:
+                amt = self._client.position_amt(symbol)
+            except Exception as err:  # noqa: BLE001 — trim is best effort
+                self._on_event(f"trim read {symbol} failed: {err}")
+                continue
+            if amt == 0.0 or price <= 0:
+                continue
+            target_qty = round_step(target_notional / price, step)
+            excess = abs(amt) - target_qty
+            if excess < step:
+                continue
+            try:
+                fills.append(self._market(
+                    symbol, "SELL" if amt > 0 else "BUY", excess,
+                    "trim", reduce_only=True))
+            except Exception as err:  # noqa: BLE001
+                self._on_event(f"trim {symbol} failed: {err}")
+        return fills
