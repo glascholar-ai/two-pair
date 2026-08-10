@@ -261,9 +261,18 @@ class LiveApp:
             bars_24h = str(rows[0][0])
         except Exception as err:  # noqa: BLE001 — digest is best effort
             logger.warning("digest journal query failed: %s", err)
+        # Trailing 24h window from the exchange: the guard counter resets
+        # at UTC midnight, so at digest time (shortly after) it always read
+        # ~0 — the original always-zero digest bug.
+        realized_24h = "n/a"
+        try:
+            usd = self._exec.realized_pnl_usd(now - dt.timedelta(hours=24))
+            realized_24h = f"{usd:+.2f} USDT"
+        except Exception as err:  # noqa: BLE001 — digest is best effort
+            logger.warning("digest income query failed: %s", err)
         return (f"digest {now:%Y-%m-%d} [{self._cfg.mode_label()}]\n"
                 f"{sig_line}\n{pos_line}\n"
-                f"today realized: {self._guard.daily_pnl_pct(now):+.2f}%\n"
+                f"realized 24h: {realized_24h}\n"
                 f"bars 24h: {bars_24h} | blocked entries: "
                 f"{self._blocked_entries}")
 

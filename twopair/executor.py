@@ -610,19 +610,28 @@ class LiveExecutor:
             except Exception as err:  # noqa: BLE001 — best effort
                 self._on_event(f"deadman arm failed for {symbol}: {err}")
 
-    def realized_pnl_today_pct(self, now: dt.datetime) -> float:
-        """Realized PnL + commissions since UTC midnight, % of leg notional.
+    def realized_pnl_usd(self, since: dt.datetime) -> float:
+        """Realized cash flow since `since`, in USDT (exchange truth).
 
-        Exchange-side replacement for the journal daily-loss recovery:
-        includes manual trades on these symbols too.
+        Sums trade PnL, commissions AND settled funding for both legs —
+        the strategy's actual realized money, manual trades included.
         """
-        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_ms = int(day_start.timestamp() * 1000)
+        start_ms = int(since.timestamp() * 1000)
         total = 0.0
         for symbol in (self._kr, self._us):
-            for income_type in ("REALIZED_PNL", "COMMISSION"):
-                total += self._client.income_sum(symbol, income_type, start_ms)
-        return total / self._notional * 100.0
+            for income_type in ("REALIZED_PNL", "COMMISSION",
+                                "FUNDING_FEE"):
+                total += self._client.income_sum(symbol, income_type,
+                                                start_ms)
+        return total
+
+    def realized_pnl_today_pct(self, now: dt.datetime) -> float:
+        """Realized cash since UTC midnight, % of configured leg notional.
+
+        Feeds the daily-loss halt counter recovery.
+        """
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return self.realized_pnl_usd(day_start) / self._notional * 100.0
 
     def estimate_entry_ts(self,
                           lookback_hours: float = 48.0) -> Optional[dt.datetime]:

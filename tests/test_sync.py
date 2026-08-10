@@ -233,11 +233,11 @@ class TestExchangeRecovery:
         ex = LiveExecutor(client, 1000.0, "KR", "US")  # type: ignore[arg-type]
         pct = ex.realized_pnl_today_pct(dt.datetime(2026, 8, 2, 3, 0,
                                                     tzinfo=UTC))
-        # 4 income calls x 2.5 USDT / 1000 notional
-        assert pct == pytest.approx(1.0)
+        # 6 income calls (3 types x 2 legs) x 2.5 USDT / 1000 notional
+        assert pct == pytest.approx(1.5)
         assert sorted(client.income_calls) == [
-            "KR:COMMISSION", "KR:REALIZED_PNL",
-            "US:COMMISSION", "US:REALIZED_PNL"]
+            "KR:COMMISSION", "KR:FUNDING_FEE", "KR:REALIZED_PNL",
+            "US:COMMISSION", "US:FUNDING_FEE", "US:REALIZED_PNL"]
 
     def test_estimate_entry_ts_walks_fills(self) -> None:
         t0 = int(dt.datetime(2026, 8, 1, 10, 0, tzinfo=UTC).timestamp() * 1000)
@@ -341,6 +341,7 @@ class TestDailyDigest:
         msg = notifier.sent[0]
         assert "side=-1" in msg and "mtm=-0.75%" in msg
         assert "held=3.0h" in msg and "blocked entries: 2" in msg
+        assert "realized 24h: n/a" in msg   # stub executor lacks income
         assert app._blocked_entries == 0   # reset after digest
 
 
