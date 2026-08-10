@@ -1,5 +1,6 @@
 {
     "portfolio_margin": true,
     "leg_notional_usdt": 50000.0,
-    "digest_utc_hour": 1
+    "digest_utc_hour": 1,
+    "max_chases": 10
 }
