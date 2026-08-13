@@ -118,3 +118,37 @@ class TestAlert:
         d2 = strat.on_bar(sig(10, 4.8), 0, 0)
         assert d1.z_alert is True
         assert d2.z_alert is False
+
+
+class TestZStop:
+    def test_z_stop_same_direction_only(self) -> None:
+        strat = Strategy(cfg(z_stop=4.0, mtm_stop_pct=0.0))
+        strat.on_bar(sig(0, 2.5), 0, 0)            # short ratio at z=2.5
+        # favorable excursion through -4 must NOT stop (that is convergence
+        # overshoot; exit rules handle it via z_out crossing on the way).
+        d = strat.on_bar(sig(5, 3.9), 0, 0)
+        assert d.action == Action.NONE
+        d = strat.on_bar(sig(10, 4.1), 0, 0)       # adverse: z beyond +4
+        assert d.action == Action.CLOSE
+        assert d.trade is not None
+        assert d.trade.reason == CloseReason.STOP
+
+    def test_z_stop_long_side(self) -> None:
+        strat = Strategy(cfg(z_stop=4.0, mtm_stop_pct=0.0))
+        strat.on_bar(sig(0, -2.5), 0, 0)           # long ratio
+        d = strat.on_bar(sig(5, -4.2), 0, 0)
+        assert d.action == Action.CLOSE
+        assert d.trade is not None and d.trade.reason == CloseReason.STOP
+
+    def test_z_stop_rearms(self) -> None:
+        strat = Strategy(cfg(z_stop=4.0, mtm_stop_pct=0.0))
+        strat.on_bar(sig(0, 2.5), 0, 0)
+        strat.on_bar(sig(5, 4.5), 0, 0)            # stopped
+        assert strat.on_bar(sig(10, 4.4), 0, 0).action == Action.NONE
+        assert strat.on_bar(sig(15, 1.0), 0, 0).action == Action.NONE
+        assert strat.on_bar(sig(20, 2.2), 0, 0).action == Action.OPEN
+
+    def test_z_stop_disabled_by_default(self) -> None:
+        strat = Strategy(cfg(mtm_stop_pct=0.0))
+        strat.on_bar(sig(0, 2.5), 0, 0)
+        assert strat.on_bar(sig(5, 6.0), 0, 0).action == Action.NONE

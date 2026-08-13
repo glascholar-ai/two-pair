@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import math
 import os
 import pathlib
 from typing import Any, Optional
@@ -17,19 +18,29 @@ from typing import Any, Optional
 class Config:
     """All strategy, risk, and system parameters."""
 
-    # Instruments (KR leg / US leg of the pair).
+    # Pair label (journal tag prefix, notifications, data file names).
+    pair_name: str = "skhx"
+
+    # Instruments. Historical field names: kr_symbol = leg A, us_symbol =
+    # leg B (any two symbols; the KR/US naming is from the first pair).
     kr_symbol: str = "SKHYNIXUSDT"
     us_symbol: str = "SKHYUSDT"
 
     # Signal parameters (baseline v3 — see README.md before changing).
-    win_mu: int = 288          # anchor window, 5m bars; keep at 24h multiples
+    # For the main pair win_mu must stay at 24h multiples (intraday
+    # seasonality); slow pairs use e.g. 2880 (10d) with segmented_sd=False.
+    win_mu: int = 288          # anchor window, 5m bars
     min_mu: int = 144
-    win_sd: int = 300          # same-segment std window; safe zone 300-450
+    win_sd: int = 300          # sd window (per segment when segmented)
     min_sd: int = 100
+    segmented_sd: bool = True  # session-conditional sd (main-pair mechanism;
+                               # actively harmful on slow pairs — validated)
+    fx_source: str = "usdkrw"  # "usdkrw" (lr subtracts ln FX) | "none" (fx=1)
     z_in: float = 2.0
     z_out: float = 0.5
     max_hold_hours: float = 24.0
     mtm_stop_pct: float = 2.5           # 0 disables
+    z_stop: float = 0.0                 # same-direction |z| stop; 0 disables
     mtm_take_profit_pct: float = 0.0    # close when MTM >= this; 0 disables
     bar_seconds: int = 300
 
@@ -76,12 +87,22 @@ class Config:
         """Journal tag for this environment: "testnet" or "live"."""
         return "testnet" if "testnet" in self.binance_base else "live"
 
+    def warmup_days(self) -> int:
+        """History needed to fill the signal windows before going live."""
+        bars_needed = max(self.win_mu, self.win_sd) * 1.5
+        return max(7, math.ceil(bars_needed / (86400 / self.bar_seconds)))
+
     def __post_init__(self) -> None:
         if self.order_style not in ("bbo", "market"):
             raise ValueError(
                 f"order_style must be bbo|market, got {self.order_style!r}")
+        if self.fx_source not in ("usdkrw", "none"):
+            raise ValueError(
+                f"fx_source must be usdkrw|none, got {self.fx_source!r}")
         if self.z_out >= self.z_in:
             raise ValueError("z_out must be < z_in")
+        if self.z_stop and self.z_stop <= self.z_in:
+            raise ValueError("z_stop must exceed z_in (or be 0)")
         if self.win_mu <= 0 or self.win_sd <= 0:
             raise ValueError("windows must be positive")
 

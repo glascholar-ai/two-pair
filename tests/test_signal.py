@@ -100,3 +100,41 @@ class TestSignalEngine:
         expected = math.log(1200.0) - math.log(150.0) - math.log(1400.0)
         assert sig.lr == pytest.approx(expected)
         assert sig.seg == SEG_KR_OPEN
+
+
+class TestPlainSdMode:
+    def test_plain_matches_pandas_single_window(self) -> None:
+        import pandas as pd
+        rng = np.random.default_rng(11)
+        vals = rng.normal(0, 0.01, 800).cumsum()
+        eng = SignalEngine(win_mu=96, min_mu=48, win_sd=96, min_sd=32,
+                           segmented=False)
+        start = dt.datetime(2026, 7, 6, 0, 0, tzinfo=UTC)
+        got = []
+        for i, v in enumerate(vals):
+            bar = Bar(ts=start + dt.timedelta(minutes=5 * i),
+                      kr=math.exp(v), us=1.0, fx=1.0)
+            got.append(eng.update(bar).z)
+        ser = pd.Series(vals)
+        mu = ser.rolling(96, min_periods=48).mean()
+        resid = ser - mu
+        sd = resid.rolling(96, min_periods=32).std()
+        ref = resid / sd
+        for i in range(200, 800):
+            assert got[i] == pytest.approx(ref.iloc[i], abs=1e-9)
+
+    def test_segmented_and_plain_differ_across_segments(self) -> None:
+        rng = np.random.default_rng(5)
+        start = dt.datetime(2026, 7, 6, 0, 0, tzinfo=UTC)
+        e_seg = SignalEngine(48, 24, 48, 16, segmented=True)
+        e_pln = SignalEngine(48, 24, 48, 16, segmented=False)
+        z_seg, z_pln = [], []
+        for i in range(600):
+            v = math.exp(rng.normal(0, 0.01))
+            bar = Bar(ts=start + dt.timedelta(minutes=5 * i), kr=v, us=1.0,
+                      fx=1.0)
+            z_seg.append(e_seg.update(bar).z)
+            z_pln.append(e_pln.update(bar).z)
+        diffs = [abs(a - b) for a, b in zip(z_seg, z_pln)
+                 if a is not None and b is not None]
+        assert diffs and max(diffs) > 1e-6   # genuinely different mechanisms

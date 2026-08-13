@@ -52,7 +52,8 @@ def run_backtest(pair: pd.DataFrame, funding_kr: pd.Series,
     Returns:
         BacktestResult with trades, equity curve, and summary metrics.
     """
-    engine = SignalEngine(cfg.win_mu, cfg.min_mu, cfg.win_sd, cfg.min_sd)
+    engine = SignalEngine(cfg.win_mu, cfg.min_mu, cfg.win_sd,
+                          cfg.min_sd, cfg.segmented_sd)
     strat = Strategy(cfg)
 
     equity: List[float] = []

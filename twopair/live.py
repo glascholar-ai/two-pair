@@ -103,7 +103,7 @@ class LiveApp:
         self._journal = journal
         self._notify = notifier
         self._engine = SignalEngine(cfg.win_mu, cfg.min_mu, cfg.win_sd,
-                                    cfg.min_sd)
+                                    cfg.min_sd, cfg.segmented_sd)
         self._strategy = Strategy(cfg)
         self._guard = RiskGuard(cfg)
         self._prev_ts: Optional[dt.datetime] = None
@@ -114,15 +114,23 @@ class LiveApp:
         self._blocked_entries = 0
 
     # ------------------------------------------------------------------ setup
-    def warmup(self, days: int = 7) -> None:
-        """Replays recent history so windows are full before going live."""
+    def warmup(self, days: int = 0) -> None:
+        """Replays recent history so windows are full before going live.
+
+        days=0 derives the depth from the configured signal windows.
+        """
         cfg = self._cfg
+        if days <= 0:
+            days = cfg.warmup_days()
         start_ms = int((_utcnow() - dt.timedelta(days=days)).timestamp() * 1000)
         kr = datamod.fetch_klines(cfg.kr_symbol, "5m", start_ms,
                                   cfg.binance_base)
         us = datamod.fetch_klines(cfg.us_symbol, "5m", start_ms,
                                   cfg.binance_base)
-        fx = datamod.fetch_fx_yahoo()
+        if cfg.fx_source == "usdkrw":
+            fx = datamod.fetch_fx_yahoo()
+        else:
+            fx = pd.Series(1.0, index=kr.index)
         pair = datamod.build_pair_dataset(kr, us, fx)
         # Drop the final row: its bar may still be forming.
         pair = pair.iloc[:-1]
@@ -459,17 +467,21 @@ class LiveApp:
         if open_ts not in kr.index or open_ts not in us.index:
             logger.warning("bar %s missing on a leg", open_ts)
             return None
-        try:
-            fx = datamod.fetch_fx_yahoo()
-            prev_fx = self._last_fx
-            self._last_fx = float(fx.to_numpy(dtype=float)[-1])
-            self._fx_ts = cast(pd.Timestamp, fx.index[-1]).to_pydatetime()
-            if prev_fx is not None:
-                gap = RiskGuard(cfg).fx_gap_alert(prev_fx, self._last_fx)
-                if gap is not None:
-                    self._notify.send(gap.message)
-        except ConnectionError as err:
-            logger.warning("fx fetch failed: %s", err)
+        if cfg.fx_source == "none":
+            self._last_fx = 1.0
+            self._fx_ts = now
+        else:
+            try:
+                fx = datamod.fetch_fx_yahoo()
+                prev_fx = self._last_fx
+                self._last_fx = float(fx.to_numpy(dtype=float)[-1])
+                self._fx_ts = cast(pd.Timestamp, fx.index[-1]).to_pydatetime()
+                if prev_fx is not None:
+                    gap = RiskGuard(cfg).fx_gap_alert(prev_fx, self._last_fx)
+                    if gap is not None:
+                        self._notify.send(gap.message)
+            except ConnectionError as err:
+                logger.warning("fx fetch failed: %s", err)
         if self._last_fx is None:
             return None
         if self._prev_ts is not None and open_ts <= self._prev_ts:

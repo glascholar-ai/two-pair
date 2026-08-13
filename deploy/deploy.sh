@@ -10,7 +10,9 @@ set -euo pipefail
 
 REMOTE="${REMOTE:-instance-two-pair}"
 DEST="${DEST:-/home/luna/trading}"
-SERVICE_ARGS="${SERVICE_ARGS:-}"
+SERVICE_NAME="${SERVICE_NAME:-twopair}"
+CONFIG="${CONFIG:-deploy/cfg-skhx.json}"
+SERVICE_ARGS="${SERVICE_ARGS:---config $CONFIG}"
 # Telegram (optional): secret name holding the bot token + the chat id.
 TG_SECRET="${TG_SECRET:-telegram-bot-token}"
 TG_CHAT_ID="${TG_CHAT_ID:-}"
@@ -20,6 +22,20 @@ cd "$LOCAL_DIR"
 
 echo "== 1/5 test gate =="
 python3 -m pytest tests/ -q
+python3 - << 'PYGATE'
+import glob, json, sys
+seen = {}
+for f in sorted(glob.glob("deploy/cfg-*.json")):
+    cfg = json.load(open(f))
+    for key in ("kr_symbol", "us_symbol"):
+        s = cfg.get(key, {"kr_symbol": "SKHYNIXUSDT",
+                          "us_symbol": "SKHYUSDT"}[key])
+        if s in seen:
+            sys.exit(f"FATAL: symbol {s} used by both {seen[s]} and {f} — "
+                     "two services must never manage the same symbol")
+        seen[s] = f
+print("pair symbol disjointness OK:", len(seen) // 2, "pairs")
+PYGATE
 
 echo "== 2/5 sync code -> $REMOTE:$DEST =="
 ssh "$REMOTE" "mkdir -p '$DEST/data'"
@@ -41,9 +57,9 @@ if [[ -n "$TG_CHAT_ID" ]]; then
     TG_ENV="Environment=SECRET_TELEGRAM_TOKEN=$TG_SECRET
 Environment=TELEGRAM_CHAT_ID=$TG_CHAT_ID"
 fi
-ssh "$REMOTE" "sudo tee /etc/systemd/system/twopair.service > /dev/null" <<EOF
+ssh "$REMOTE" "sudo tee /etc/systemd/system/$SERVICE_NAME.service > /dev/null" <<EOF
 [Unit]
-Description=twopair trading loop
+Description=twopair trading loop ($SERVICE_NAME)
 After=network-online.target
 Wants=network-online.target
 
@@ -63,8 +79,8 @@ EOF
 
 echo "== 5/5 restart service =="
 ssh "$REMOTE" "sudo systemctl daemon-reload \
-    && sudo systemctl enable --now twopair \
-    && sudo systemctl restart twopair"
+    && sudo systemctl enable --now $SERVICE_NAME \
+    && sudo systemctl restart $SERVICE_NAME"
 sleep 3
-ssh "$REMOTE" "systemctl --no-pager --lines=8 status twopair" || true
-echo "deploy done. logs: ssh $REMOTE journalctl -u twopair -f"
+ssh "$REMOTE" "systemctl --no-pager --lines=8 status $SERVICE_NAME" || true
+echo "deploy done. logs: ssh $REMOTE journalctl -u $SERVICE_NAME -f"

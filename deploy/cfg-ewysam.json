@@ -1,0 +1,19 @@
+{
+    "pair_name": "ewysam",
+    "kr_symbol": "EWYUSDT",
+    "us_symbol": "SAMSUNGUSDT",
+    "db_path": "data/journal-ewysam.sqlite",
+    "portfolio_margin": true,
+    "digest_utc_hour": 1,
+    "max_chases": 10,
+    "segmented_sd": false,
+    "fx_source": "none",
+    "win_mu": 2880,
+    "min_mu": 1440,
+    "win_sd": 2880,
+    "min_sd": 960,
+    "z_stop": 4.0,
+    "mtm_stop_pct": 0.0,
+    "max_hold_hours": 336.0,
+    "leg_notional_usdt": 50000.0
+}

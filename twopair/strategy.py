@@ -207,8 +207,11 @@ class Strategy:
             self._alerted = True
             alert = True
 
+        z_stop_hit = (cfg.z_stop > 0 and sig.z is not None
+                      and ((pos.side == -1 and sig.z > cfg.z_stop)
+                           or (pos.side == 1 and sig.z < -cfg.z_stop)))
         stop_hit = (cfg.mtm_stop_pct > 0
-                    and pos.mtm_pct <= -cfg.mtm_stop_pct)
+                    and pos.mtm_pct <= -cfg.mtm_stop_pct) or z_stop_hit
         tp_hit = (cfg.mtm_take_profit_pct > 0
                   and pos.mtm_pct >= cfg.mtm_take_profit_pct)
         timed_out = pos.held_hours(sig.ts) >= cfg.max_hold_hours

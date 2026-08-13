@@ -52,6 +52,21 @@ research/              前期调研存档（币安/HL 股票 perp funding 分析
 
 运行:`python3 -m pytest tests/` · `python3 pair_backtest.py` · `python3 run_live.py [--testnet]`
 
+## 多对架构（2026-08-13 起）
+
+每对一个进程/一个 systemd 服务/一份配置/一个 journal,共享账户与代码:
+
+| 服务 | 配置 | 对 | 信号形态 |
+|---|---|---|---|
+| twopair | deploy/cfg-skhx.json | SKHYNIX/SKHY | 24h 锚+分段 std+MTM 止损(主对 v3) |
+| twopair-ewysam | deploy/cfg-ewysam.json | EWY/SAMSUNG | 10d 锚+平坦 std+z 止损 4+14d 超时 |
+| twopair-mudram | deploy/cfg-mudram.json | MU/DRAM | 同上 |
+
+部署:`deploy/deploy_all.sh`(或单个 `SERVICE_NAME=.. CONFIG=.. deploy/deploy.sh`);
+部署门禁自动断言活跃对之间 symbol 两两不相交。配置字段 kr_symbol/us_symbol
+为历史命名 = A 腿/B 腿。新对验证:调研数据灌本引擎,EWY/SAMSUNG 22 笔/82%
+胜率复现,MU/DRAM 同量级(见 git 历史)。
+
 状态恢复:仓位以交易所为唯一事实源,每轮(5 分钟)对账——重启恢复只是第 0 轮;
 journal 仅补充两个信号空间标量(当日已实现亏损、止损再武装锁存)。
 任何时刻 kill 进程,重启即恢复;孤腿/数量漂移/外部手动平仓均自动处理。

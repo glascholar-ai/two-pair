@@ -12,9 +12,10 @@ logger = logging.getLogger(__name__)
 class Notifier:
     """Sends messages to a Telegram chat; degrades to logging when unset."""
 
-    def __init__(self, token: str, chat_id: str) -> None:
+    def __init__(self, token: str, chat_id: str, prefix: str = "") -> None:
         self._token = token
         self._chat_id = chat_id
+        self._prefix = f"[{prefix}] " if prefix else ""
 
     @property
     def enabled(self) -> bool:
@@ -29,6 +30,7 @@ class Notifier:
         Failures are logged, never raised — notification must not be able
         to take down the trading loop.
         """
+        text = self._prefix + text
         logger.info("notify: %s", text.replace("\n", " | "))
         if not self.enabled:
             return False

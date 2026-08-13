@@ -51,7 +51,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     parser.add_argument("--config", default=None, help="JSON config path")
     parser.add_argument("--testnet", action="store_true",
                         help="run against the Binance futures testnet")
-    parser.add_argument("--warmup-days", type=int, default=7)
+    parser.add_argument("--warmup-days", type=int, default=0,
+                        help="0 = derive from signal windows")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -60,7 +61,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     cfg = load_config(args.config)
     if args.testnet:
         cfg = dataclasses.replace(cfg, binance_base=TESTNET_BASE)
-    notifier = Notifier(cfg.telegram_token, cfg.telegram_chat_id)
+    notifier = Notifier(cfg.telegram_token, cfg.telegram_chat_id,
+                        prefix=cfg.pair_name)
     journal = Journal(cfg.db_path)
     app = LiveApp(cfg, build_executor(cfg, notifier), journal, notifier)
     app.warmup(days=args.warmup_days)

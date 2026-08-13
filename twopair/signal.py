@@ -124,11 +124,12 @@ class SignalEngine:
     """
 
     def __init__(self, win_mu: int, min_mu: int, win_sd: int,
-                 min_sd: int) -> None:
+                 min_sd: int, segmented: bool = True) -> None:
         self._mu = RollingStat(win_mu, min_mu)
         self._sd: Dict[str, RollingStat] = {}
         self._win_sd = win_sd
         self._min_sd = min_sd
+        self._segmented = segmented
         self._last_ts: Optional[dt.datetime] = None
 
     def update(self, bar: Bar) -> SignalState:
@@ -159,10 +160,11 @@ class SignalEngine:
         sd: Optional[float] = None
         if mu is not None:
             resid = lr - mu
-            stat = self._sd.get(seg)
+            bucket = seg if self._segmented else "all"
+            stat = self._sd.get(bucket)
             if stat is None:
                 stat = RollingStat(self._win_sd, self._min_sd)
-                self._sd[seg] = stat
+                self._sd[bucket] = stat
             stat.push(resid)
             sd = stat.std()
             if sd is not None and sd > 0:

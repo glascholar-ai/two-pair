@@ -168,3 +168,41 @@ class TestNotifier:
         notifier = Notifier("", "")
         assert notifier.enabled is False
         assert notifier.send("msg") is False
+
+
+class TestMultiPairConfig:
+    def test_warmup_days_derivation(self) -> None:
+        assert Config().warmup_days() == 7
+        assert Config(win_mu=2880, min_mu=1440, win_sd=2880,
+                      min_sd=960).warmup_days() == 15
+
+    def test_fx_source_validation(self) -> None:
+        assert Config(fx_source="none").fx_source == "none"
+        with pytest.raises(ValueError):
+            Config(fx_source="eurusd")
+
+    def test_z_stop_validation(self) -> None:
+        with pytest.raises(ValueError):
+            Config(z_stop=1.5)          # below z_in
+        assert Config(z_stop=4.0).z_stop == 4.0
+
+    def test_deployed_pair_configs_are_valid_and_disjoint(self) -> None:
+        import glob
+        from twopair.config import load_config
+        seen: dict = {}
+        files = sorted(glob.glob("deploy/cfg-*.json"))
+        assert len(files) >= 3
+        for f in files:
+            cfg = load_config(f)
+            for s in (cfg.kr_symbol, cfg.us_symbol):
+                assert s not in seen, f"{s} in both {seen[s]} and {f}"
+                seen[s] = f
+
+
+class TestNotifierPrefix:
+    def test_prefix_applied(self, caplog: pytest.LogCaptureFixture) -> None:
+        import logging
+        notifier = Notifier("", "", prefix="mudram")
+        with caplog.at_level(logging.INFO):
+            notifier.send("hello")
+        assert any("[mudram] hello" in r.message for r in caplog.records)
