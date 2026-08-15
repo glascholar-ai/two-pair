@@ -1,0 +1,476 @@
+== scan_adr_basis.py
+
+######## BABA/9988.HK  (9988.HK x8 / USDHKD)
+-- basis
+   perp_ret_ar1=-0.0395, home_ret_ar1=-0.101, n_bars=4.36e+03, n_days=66, mean_bps=13.8, std_bps=19.5, intra_std_bps=11.4, daily_mean_std_bps=15.9, ar1_5m=0.847, ar1_intra_5m=0.571, hl_bars=4.17, hl_intra_bars=1.24, abs_gt_50bps_pct=2.92, abs_gt_100bps_pct=1.12, p99_abs_bps=101
+-- beta
+   beta_5m=0.804, t_5m=164, r2_5m=0.865, n_5m=4.22e+03, perp_std_5m_bps=24, home_std_5m_bps=27.8, beta_30m=0.909, t_30m=267, r2_30m=0.952, n_30m=3.56e+03, perp_std_30m_bps=58.2, home_std_30m_bps=62.5
+-- pred
+   perp_fwd5m_on_dev_b=-0.0766, perp_fwd5m_on_dev_t=-3.42, home_fwd5m_on_dev_b=0.115, home_fwd5m_on_dev_t=4.46, perp_fwd5m_on_home_lag5m_b=-0.00282, perp_fwd5m_on_home_lag5m_t=-0.219, perp_fwd5m_on_(home-perp)_5m_b=0.156, perp_fwd5m_on_(home-perp)_5m_t=4.48, n_5m=4.21e+03, perp_fwd30m_on_dev_b=-0.132, perp_fwd30m_on_dev_t=-2.27, home_fwd30m_on_dev_b=0.211, home_fwd30m_on_dev_t=3.38, perp_fwd30m_on_home_lag5m_b=0.0186, perp_fwd30m_on_home_lag5m_t=0.565, perp_fwd30m_on_(home-perp)_5m_b=0.152, perp_fwd30m_on_(home-perp)_5m_t=1.63, n_30m=3.55e+03
+-- mr_k2
+   n_trades=151, per_day=2.1, pair_mean_bps=19.6, pair_med_bps=19.7, pair_win_pct=94.7, pair_t=27.3, perp_mean_bps=7.64, perp_win_pct=49.7, perp_t=1.17, hold_med_min=20, forced_pct=14.6, entry_sd_bps_med=9.96
+-- mr_k3
+   n_trades=15, per_day=0.208, pair_mean_bps=23.3, pair_med_bps=23.8, pair_win_pct=86.7, pair_t=7.06, perp_mean_bps=51.9, perp_win_pct=40, perp_t=1.35, hold_med_min=35, forced_pct=40, entry_sd_bps_med=9.96
+-- snap
+   0755_0830_beta=0.0479, 0755_0830_t=0.349, 0755_0830_r2=0.00187, 0755_0830_n=67, 0755_0830_basis0_std_bps=30.2, 0755_0830_ret_std_bps=33.4, 0755_0830_fade_mean_bps=-7.47, 0755_0830_fade_t=-1.87, 0755_1345_beta=0.684, 0755_1345_t=1.48, 0755_1345_r2=0.0327, 0755_1345_n=67, 0755_1345_basis0_std_bps=30.2, 0755_1345_ret_std_bps=114, 0755_1345_fade_mean_bps=-17.7, 0755_1345_fade_t=-1.28, 1325_1345_beta=-0.328, 1325_1345_t=-2.11, 1325_1345_r2=0.0663, 1325_1345_n=65, 1325_1345_basis0_std_bps=86.2, 1325_1345_ret_std_bps=110, 1325_1345_fade_mean_bps=22.9, 1325_1345_fade_t=1.72, 1325_1430_beta=-0.607, 1325_1430_t=-3.39, 1325_1430_r2=0.154, 1325_1430_n=65, 1325_1430_basis0_std_bps=86.2, 1325_1430_ret_std_bps=133, 1325_1430_fade_mean_bps=28.3, 1325_1430_fade_t=1.74
+-- lag1
+   sig_sd_bps=10.4, n_5m=1.22e+03, mean_5m_bps=2.27, t_5m=3.07, win_5m_pct=53.2, n_30m=1.04e+03, mean_30m_bps=1.67, t_30m=0.91, win_30m_pct=52, per_day=16.9
+-- lag2
+   sig_sd_bps=10.4, n_5m=218, mean_5m_bps=4.52, t_5m=2.26, win_5m_pct=52.3, n_30m=192, mean_30m_bps=7.29, t_30m=1.5, win_30m_pct=58.9, per_day=3.03
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:-0.046 -5:-0.018 -4:0.025 -3:0.029 -2:0.007 -1:-0.081 +0:0.930 +1:-0.003 +2:0.034 +3:0.007 +4:0.042 +5:-0.016 +6:-0.056
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+1.0   330.0               19.087          61.723          51.454   0.874  0.947        -0.038        -0.387
+2.0   792.0               12.236          28.710          33.883   0.825  0.898        -0.070        -1.373
+3.0   792.0                9.901          20.538          24.384   0.777  0.824        -0.120        -2.836
+5.0   726.0                9.631          23.859          25.018   0.780  0.833        -0.029        -0.589
+6.0   792.0                9.018          16.157          20.129   0.728  0.784        -0.107        -2.256
+7.0   792.0               10.686          13.209          16.683   0.653  0.669        -0.127        -3.512
+
+######## TSM/2330.TW  (2330.TW x5 / USDTWD(1h Yahoo))
+-- basis
+   perp_ret_ar1=0.0191, home_ret_ar1=-0.206, n_bars=3.4e+03, n_days=63, mean_bps=1.34e+03, std_bps=184, intra_std_bps=27.7, daily_mean_std_bps=183, ar1_5m=0.992, ar1_intra_5m=0.745, hl_bars=82.4, hl_intra_bars=2.35, abs_gt_50bps_pct=100, abs_gt_100bps_pct=100, p99_abs_bps=1.87e+03
+-- beta
+   beta_5m=0.292, t_5m=29.3, r2_5m=0.204, n_5m=3.34e+03, perp_std_5m_bps=13.4, home_std_5m_bps=20.7, beta_30m=0.561, t_30m=51.3, r2_30m=0.466, n_30m=3.02e+03, perp_std_30m_bps=31.8, home_std_30m_bps=38.7
+-- pred
+   perp_fwd5m_on_dev_b=-0.00431, perp_fwd5m_on_dev_t=-1.46, home_fwd5m_on_dev_b=0.0208, home_fwd5m_on_dev_t=4.57, perp_fwd5m_on_home_lag5m_b=0.0246, perp_fwd5m_on_home_lag5m_t=2.23, perp_fwd5m_on_(home-perp)_5m_b=0.0268, perp_fwd5m_on_(home-perp)_5m_t=2.2, n_5m=3.32e+03, perp_fwd30m_on_dev_b=-0.00957, perp_fwd30m_on_dev_t=-1.35, home_fwd30m_on_dev_b=0.0293, home_fwd30m_on_dev_t=3.38, perp_fwd30m_on_home_lag5m_b=0.00892, perp_fwd30m_on_home_lag5m_t=0.32, perp_fwd30m_on_(home-perp)_5m_b=0.0237, perp_fwd30m_on_(home-perp)_5m_t=0.767, n_30m=3.01e+03
+-- mr_k2
+   n_trades=67, per_day=0.944, pair_mean_bps=27.9, pair_med_bps=34.9, pair_win_pct=76.1, pair_t=4.66, perp_mean_bps=3.82, perp_win_pct=49.3, perp_t=0.62, hold_med_min=100, forced_pct=31.3, entry_sd_bps_med=46.2
+-- mr_k3
+   n_trades=20, per_day=0.282, pair_mean_bps=32.2, pair_med_bps=40.1, pair_win_pct=75, pair_t=2.85, perp_mean_bps=3.02, perp_win_pct=55, perp_t=0.284, hold_med_min=160, forced_pct=35, entry_sd_bps_med=46.2
+-- snap
+   0755_0830_beta=0.0537, 0755_0830_t=1.58, 0755_0830_r2=0.0396, 0755_0830_n=63, 0755_0830_basis0_std_bps=214, 0755_0830_ret_std_bps=57.7, 0755_0830_fade_mean_bps=-9.66, 0755_0830_fade_t=-1.41, 0755_1345_beta=-0.133, 0755_1345_t=-1.45, 0755_1345_r2=0.0339, 0755_1345_n=62, 0755_1345_basis0_std_bps=215, 0755_1345_ret_std_bps=156, 0755_1345_fade_mean_bps=14.5, 0755_1345_fade_t=0.736, 1325_1345_beta=-0.0886, 1325_1345_t=-1.33, 1325_1345_r2=0.0285, 1325_1345_n=62, 1325_1345_basis0_std_bps=231, 1325_1345_ret_std_bps=121, 1325_1345_fade_mean_bps=6.66, 1325_1345_fade_t=0.434, 1325_1430_beta=-0.144, 1325_1430_t=-1.58, 1325_1430_r2=0.04, 1325_1430_n=62, 1325_1430_basis0_std_bps=231, 1325_1430_ret_std_bps=166, 1325_1430_fade_mean_bps=10.5, 1325_1430_fade_t=0.497
+-- lag1
+   sig_sd_bps=18.9, n_5m=1.08e+03, mean_5m_bps=0.291, t_5m=0.695, win_5m_pct=50.5, n_30m=965, mean_30m_bps=0.307, t_30m=0.306, win_30m_pct=50.1, per_day=15.2
+-- lag2
+   sig_sd_bps=18.9, n_5m=150, mean_5m_bps=0.117, t_5m=0.0863, win_5m_pct=52, n_30m=127, mean_30m_bps=-0.136, t_30m=-0.0424, win_30m_pct=48.8, per_day=2.11
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:-0.017 -5:0.009 -4:-0.004 -3:-0.022 -2:-0.039 -1:0.094 +0:0.452 +1:0.039 +2:-0.002 +3:-0.031 +4:-0.007 +5:0.031 +6:-0.014
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+1.0   693.0               34.774          16.652          24.594   0.365  0.298        -0.013        -2.123
+2.0   756.0               25.039          13.144          20.136   0.271  0.165        -0.001        -0.198
+3.0   756.0               21.696          12.661          20.082   0.308  0.225        -0.005        -0.795
+4.0   756.0               26.708          10.575          18.723   0.231  0.162         0.010         1.621
+5.0   378.0               29.129          12.393          19.241   0.201  0.093         0.017         1.221
+
+######## SONY/6758.T  (6758.T / USDJPY)
+-- basis
+   perp_ret_ar1=-0.0817, home_ret_ar1=0.0166, n_bars=2.31e+03, n_days=36, mean_bps=-14.7, std_bps=47.7, intra_std_bps=29.4, daily_mean_std_bps=38.1, ar1_5m=0.879, ar1_intra_5m=0.708, hl_bars=5.36, hl_intra_bars=2.01, abs_gt_50bps_pct=18.8, abs_gt_100bps_pct=4.33, p99_abs_bps=188
+-- beta
+   beta_5m=0.404, t_5m=21.4, r2_5m=0.169, n_5m=2.24e+03, perp_std_5m_bps=19.4, home_std_5m_bps=19.8, beta_30m=0.71, t_30m=47.5, r2_30m=0.546, n_30m=1.88e+03, perp_std_30m_bps=42.1, home_std_30m_bps=43.8
+-- pred
+   perp_fwd5m_on_dev_b=-0.0923, perp_fwd5m_on_dev_t=-10.7, home_fwd5m_on_dev_b=0.0211, home_fwd5m_on_dev_t=2.31, perp_fwd5m_on_home_lag5m_b=0.252, perp_fwd5m_on_home_lag5m_t=13, perp_fwd5m_on_(home-perp)_5m_b=0.242, perp_fwd5m_on_(home-perp)_5m_t=13.4, n_5m=2.26e+03, perp_fwd30m_on_dev_b=-0.161, perp_fwd30m_on_dev_t=-8.11, home_fwd30m_on_dev_b=0.107, home_fwd30m_on_dev_t=5.08, perp_fwd30m_on_home_lag5m_b=0.392, perp_fwd30m_on_home_lag5m_t=8.4, perp_fwd30m_on_(home-perp)_5m_b=0.422, perp_fwd30m_on_(home-perp)_5m_t=9.77, n_30m=1.9e+03
+-- mr_k2
+   n_trades=64, per_day=1.68, pair_mean_bps=49.6, pair_med_bps=49.3, pair_win_pct=89.1, pair_t=12.3, perp_mean_bps=34.2, perp_win_pct=76.6, perp_t=4.76, hold_med_min=15, forced_pct=18.8, entry_sd_bps_med=27
+-- mr_k3
+   n_trades=14, per_day=0.368, pair_mean_bps=82, pair_med_bps=67.5, pair_win_pct=100, pair_t=7.77, perp_mean_bps=34.9, perp_win_pct=71.4, perp_t=1.24, hold_med_min=32.5, forced_pct=7.14, entry_sd_bps_med=27
+-- snap
+   0755_0830_beta=-0.224, 0755_0830_t=-1.68, 0755_0830_r2=0.0767, 0755_0830_n=36, 0755_0830_basis0_std_bps=45, 0755_0830_ret_std_bps=36.4, 0755_0830_fade_mean_bps=10.5, 0755_0830_fade_t=1.8, 0755_1345_beta=-0.28, 0755_1345_t=-0.753, 0755_1345_r2=0.0169, 0755_1345_n=35, 0755_1345_basis0_std_bps=44.8, 0755_1345_ret_std_bps=96.6, 0755_1345_fade_mean_bps=10.2, 0755_1345_fade_t=0.638, 1325_1345_beta=-0.29, 1325_1345_t=-1.05, 1325_1345_r2=0.0321, 1325_1345_n=35, 1325_1345_basis0_std_bps=58, 1325_1345_ret_std_bps=93.8, 1325_1345_fade_mean_bps=17.9, 1325_1345_fade_t=1.15, 1325_1430_beta=-0.239, 1325_1430_t=-0.797, 1325_1430_r2=0.0189, 1325_1430_n=35, 1325_1430_basis0_std_bps=58, 1325_1430_ret_std_bps=101, 1325_1430_fade_mean_bps=15.8, 1325_1430_fade_t=0.939
+-- lag1
+   sig_sd_bps=21.2, n_5m=538, mean_5m_bps=8.7, t_5m=8.66, win_5m_pct=51.1, n_30m=462, mean_30m_bps=16.5, t_30m=7.44, win_30m_pct=62.1, per_day=14.2
+-- lag2
+   sig_sd_bps=21.2, n_5m=106, mean_5m_bps=18.3, t_5m=5.82, win_5m_pct=66, n_30m=96, mean_30m_bps=27.5, t_30m=4.42, win_30m_pct=66.7, per_day=2.79
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:-0.035 -5:-0.052 -4:-0.024 -3:0.013 -2:-0.054 -1:-0.012 +0:0.412 +1:0.267 +2:0.062 +3:0.055 +4:0.052 +5:-0.019 +6:-0.055
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+0.0   366.0               38.874          39.413          31.594   0.447  0.232        -0.102        -5.095
+1.0   432.0               26.224          17.854          18.604   0.353  0.129        -0.068        -3.447
+2.0   216.0               28.119          21.095          18.264   0.546  0.220        -0.105        -3.038
+3.0   179.0               29.169          25.797          20.150   0.504  0.243        -0.084        -2.564
+4.0   432.0               27.908          15.557          12.161   0.401  0.095        -0.086        -4.763
+5.0   432.0               23.540          13.153          11.932   0.447  0.156        -0.126        -5.440
+6.0   182.0               28.364          11.095          21.862   0.075  0.021        -0.081        -2.827
+
+######## NVO/NOVO.B  (NOVO B / USDDKK)
+-- basis
+   perp_ret_ar1=-0.0213, home_ret_ar1=-0.0919, n_bars=4.93e+03, n_days=53, mean_bps=-14.9, std_bps=71.9, intra_std_bps=13.7, daily_mean_std_bps=70.5, ar1_5m=0.976, ar1_intra_5m=0.558, hl_bars=28.1, hl_intra_bars=1.19, abs_gt_50bps_pct=4.54, abs_gt_100bps_pct=3.93, p99_abs_bps=479
+-- beta
+   beta_5m=0.81, t_5m=117, r2_5m=0.738, n_5m=4.88e+03, perp_std_5m_bps=22.9, home_std_5m_bps=24.3, beta_30m=0.955, t_30m=223, r2_30m=0.915, n_30m=4.61e+03, perp_std_30m_bps=56.8, home_std_30m_bps=56.9
+-- pred
+   perp_fwd5m_on_dev_b=-0.0301, perp_fwd5m_on_dev_t=-4.96, home_fwd5m_on_dev_b=-0.00546, home_fwd5m_on_dev_t=-0.844, perp_fwd5m_on_home_lag5m_b=0.0509, perp_fwd5m_on_home_lag5m_t=3.81, perp_fwd5m_on_(home-perp)_5m_b=0.27, perp_fwd5m_on_(home-perp)_5m_t=10.6, n_5m=4.86e+03, perp_fwd30m_on_dev_b=-0.0764, perp_fwd30m_on_dev_t=-5.07, home_fwd30m_on_dev_b=-0.0466, home_fwd30m_on_dev_t=-3.08, perp_fwd30m_on_home_lag5m_b=0.12, perp_fwd30m_on_home_lag5m_t=3.5, perp_fwd30m_on_(home-perp)_5m_b=0.454, perp_fwd30m_on_(home-perp)_5m_t=6.91, n_30m=4.6e+03
+-- mr_k2
+   n_trades=178, per_day=3.3, pair_mean_bps=23.3, pair_med_bps=20.6, pair_win_pct=96.1, pair_t=12, perp_mean_bps=25.6, perp_win_pct=74.2, perp_t=7.92, hold_med_min=15, forced_pct=6.18, entry_sd_bps_med=9.86
+-- mr_k3
+   n_trades=38, per_day=0.704, pair_mean_bps=36.6, pair_med_bps=32, pair_win_pct=94.7, pair_t=4.29, perp_mean_bps=46.4, perp_win_pct=81.6, perp_t=5.01, hold_med_min=20, forced_pct=5.26, entry_sd_bps_med=9.86
+-- snap
+   0755_0830_beta=-0.0494, 0755_0830_t=-0.644, 0755_0830_r2=0.00807, 0755_0830_n=53, 0755_0830_basis0_std_bps=73.1, 0755_0830_ret_std_bps=40.2, 0755_0830_fade_mean_bps=19, 0755_0830_fade_t=3.88, 0755_1345_beta=-0.0576, 0755_1345_t=-0.165, 0755_1345_r2=0.000545, 0755_1345_n=52, 0755_1345_basis0_std_bps=73.7, 0755_1345_ret_std_bps=182, 0755_1345_fade_mean_bps=70.8, 0755_1345_fade_t=3.03, 1325_1345_beta=-0.0513, 1325_1345_t=-0.288, 1325_1345_r2=0.00166, 1325_1345_n=52, 1325_1345_basis0_std_bps=77.5, 1325_1345_ret_std_bps=97.7, 1325_1345_fade_mean_bps=23.8, 1325_1345_fade_t=1.81, 1325_1430_beta=-0.0206, 1325_1430_t=-0.0879, 1325_1430_r2=0.000154, 1325_1430_n=52, 1325_1430_basis0_std_bps=77.5, 1325_1430_ret_std_bps=129, 1325_1430_fade_mean_bps=19.9, 1325_1430_fade_t=1.09
+-- lag1
+   sig_sd_bps=12.6, n_5m=1.09e+03, mean_5m_bps=7.52, t_5m=11.4, win_5m_pct=61.4, n_30m=1.03e+03, mean_30m_bps=10.9, t_30m=6.22, win_30m_pct=59.4, per_day=20.2
+-- lag2
+   sig_sd_bps=12.6, n_5m=172, mean_5m_bps=9.56, t_5m=4, win_5m_pct=64, n_30m=170, mean_30m_bps=19.5, t_30m=4.26, win_30m_pct=69.4, per_day=3.19
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:-0.008 -5:-0.044 -4:0.017 -3:0.024 -2:0.026 -1:-0.066 +0:0.859 +1:0.055 +2:0.058 +3:0.040 +4:-0.001 +5:-0.033 +6:0.006
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+7.0   572.0               22.876          29.025          23.716   0.807  0.596        -0.027        -2.437
+8.0   619.0               10.682          16.607          15.116   0.801  0.526        -0.009        -1.145
+9.0   612.0                9.605          12.659          12.483   0.660  0.421        -0.020        -2.464
+10.0  612.0                9.454          13.258          12.176   0.781  0.513        -0.030        -2.401
+11.0  612.0               14.638          36.697          46.144   0.762  0.901        -0.050        -1.180
+12.0  612.0               13.155          16.780          15.184   0.788  0.531        -0.153        -5.882
+13.0  616.0               12.226          28.773          28.211   0.925  0.834        -0.466        -5.040
+14.0  624.0               11.788          22.429          21.719   0.902  0.753        -0.300        -4.262
+
+######## ASML/ASML.AS  (ASML.AS x EURUSD)
+-- basis
+   perp_ret_ar1=-0.0678, home_ret_ar1=-0.0474, n_bars=4.57e+03, n_days=46, mean_bps=11.9, std_bps=33.3, intra_std_bps=12.8, daily_mean_std_bps=30.7, ar1_5m=0.934, ar1_intra_5m=0.628, hl_bars=10.2, hl_intra_bars=1.49, abs_gt_50bps_pct=4.57, abs_gt_100bps_pct=3.52, p99_abs_bps=165
+-- beta
+   beta_5m=0.927, t_5m=150, r2_5m=0.833, n_5m=4.53e+03, perp_std_5m_bps=26.1, home_std_5m_bps=25.7, beta_30m=0.978, t_30m=286, r2_30m=0.95, n_30m=4.3e+03, perp_std_30m_bps=60.8, home_std_30m_bps=60.5
+-- pred
+   perp_fwd5m_on_dev_b=-0.096, perp_fwd5m_on_dev_t=-6.15, home_fwd5m_on_dev_b=0.000967, home_fwd5m_on_dev_t=0.0626, perp_fwd5m_on_home_lag5m_b=0.00483, perp_fwd5m_on_home_lag5m_t=0.32, perp_fwd5m_on_(home-perp)_5m_b=0.427, perp_fwd5m_on_(home-perp)_5m_t=12.1, n_5m=4.51e+03, perp_fwd30m_on_dev_b=-0.189, perp_fwd30m_on_dev_t=-5.19, home_fwd30m_on_dev_b=-0.0164, home_fwd30m_on_dev_t=-0.45, perp_fwd30m_on_home_lag5m_b=0.0409, perp_fwd30m_on_home_lag5m_t=1.13, perp_fwd30m_on_(home-perp)_5m_b=0.393, perp_fwd30m_on_(home-perp)_5m_t=4.62, n_30m=4.28e+03
+-- mr_k2
+   n_trades=176, per_day=3.83, pair_mean_bps=17.7, pair_med_bps=16.3, pair_win_pct=97.2, pair_t=20.6, perp_mean_bps=21.6, perp_win_pct=67.6, perp_t=5.16, hold_med_min=10, forced_pct=4.55, entry_sd_bps_med=7.8
+-- mr_k3
+   n_trades=35, per_day=0.761, pair_mean_bps=26.4, pair_med_bps=22.1, pair_win_pct=97.1, pair_t=8.11, perp_mean_bps=32.1, perp_win_pct=68.6, perp_t=2.39, hold_med_min=15, forced_pct=2.86, entry_sd_bps_med=7.8
+-- snap
+   0755_0830_beta=0.173, 0755_0830_t=0.648, 0755_0830_r2=0.0099, 0755_0830_n=44, 0755_0830_basis0_std_bps=35.7, 0755_0830_ret_std_bps=62.1, 0755_0830_fade_mean_bps=-6.39, 0755_0830_fade_t=-0.678, 0755_1345_beta=-0.848, 0755_1345_t=-0.902, 0755_1345_r2=0.019, 0755_1345_n=44, 0755_1345_basis0_std_bps=35.7, 0755_1345_ret_std_bps=220, 0755_1345_fade_mean_bps=42.3, 0755_1345_fade_t=1.3, 1325_1345_beta=-0.17, 1325_1345_t=-0.271, 1325_1345_r2=0.0017, 1325_1345_n=45, 1325_1345_basis0_std_bps=27.5, 1325_1345_ret_std_bps=114, 1325_1345_fade_mean_bps=26.1, 1325_1345_fade_t=1.66, 1325_1430_beta=-0.187, 1325_1430_t=-0.224, 1325_1430_r2=0.00117, 1325_1430_n=45, 1325_1430_basis0_std_bps=27.5, 1325_1430_ret_std_bps=151, 1325_1430_fade_mean_bps=28.2, 1325_1430_fade_t=1.33
+-- lag1
+   sig_sd_bps=10.8, n_5m=1.08e+03, mean_5m_bps=8.3, t_5m=10, win_5m_pct=65.5, n_30m=1.04e+03, mean_30m_bps=7.29, t_30m=3.74, win_30m_pct=57, per_day=23.6
+-- lag2
+   sig_sd_bps=10.8, n_5m=251, mean_5m_bps=14.8, t_5m=7.44, win_5m_pct=73.3, n_30m=244, mean_30m_bps=13.6, t_30m=3.38, win_30m_pct=57.4, per_day=5.46
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:0.027 -5:-0.005 -4:0.015 -3:-0.053 -2:0.048 -1:-0.046 +0:0.913 +1:0.005 +2:0.020 +3:-0.022 +4:0.010 +5:-0.006 +6:0.033
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+7.0   495.0               14.094          31.424          24.846   0.857  0.747        -0.053        -2.159
+8.0   530.0               16.119          21.413          21.131   0.891  0.774        -0.028        -1.178
+9.0   531.0               13.242          16.677          15.316   0.876  0.647        -0.132        -5.453
+10.0  540.0               11.237          14.737          14.044   0.790  0.566        -0.097        -2.839
+11.0  540.0               12.520          16.742          15.926   0.884  0.707        -0.278        -5.295
+12.0  540.0               11.762          20.241          19.246   0.885  0.707        -0.424        -5.852
+13.0  540.0               12.330          44.702          44.698   0.963  0.928        -0.239        -1.611
+14.0  540.0               11.134          34.839          34.636   0.954  0.900        -0.307        -2.353
+15.0  270.0                9.907          25.910          24.785   0.972  0.865        -0.806        -4.654
+
+######## EWY/K200  (KOSPI200 idx / USDKRW (scaled))
+-- basis
+   perp_ret_ar1=-0.0144, home_ret_ar1=-0.0604, n_bars=4.71e+03, n_days=61, mean_bps=4.66, std_bps=86, intra_std_bps=40.2, daily_mean_std_bps=76.3, ar1_5m=0.978, ar1_intra_5m=0.899, hl_bars=30.7, hl_intra_bars=6.53, abs_gt_50bps_pct=47.7, abs_gt_100bps_pct=25, p99_abs_bps=231
+-- beta
+   beta_5m=0.758, t_5m=198, r2_5m=0.893, n_5m=4.7e+03, perp_std_5m_bps=34.4, home_std_5m_bps=42.9, beta_30m=0.789, t_30m=249, r2_30m=0.934, n_30m=4.39e+03, perp_std_30m_bps=81.6, home_std_30m_bps=100
+-- pred
+   perp_fwd5m_on_dev_b=-0.00924, perp_fwd5m_on_dev_t=-1.09, home_fwd5m_on_dev_b=0.00906, home_fwd5m_on_dev_t=0.859, perp_fwd5m_on_home_lag5m_b=-0.0201, perp_fwd5m_on_home_lag5m_t=-1.75, perp_fwd5m_on_(home-perp)_5m_b=-0.0244, perp_fwd5m_on_(home-perp)_5m_t=-0.755, n_5m=4.63e+03, perp_fwd30m_on_dev_b=-0.0418, perp_fwd30m_on_dev_t=-2.03, home_fwd30m_on_dev_b=0.0162, home_fwd30m_on_dev_t=0.642, perp_fwd30m_on_home_lag5m_b=0.00617, perp_fwd30m_on_home_lag5m_t=0.218, perp_fwd30m_on_(home-perp)_5m_b=0.0609, perp_fwd30m_on_(home-perp)_5m_t=0.743, n_30m=4.32e+03
+-- mr_k2
+   n_trades=87, per_day=1.19, pair_mean_bps=6.48, pair_med_bps=14.2, pair_win_pct=62.1, pair_t=0.946, perp_mean_bps=50, perp_win_pct=55.2, perp_t=2.67, hold_med_min=65, forced_pct=33.3, entry_sd_bps_med=30.2
+-- mr_k3
+   n_trades=38, per_day=0.521, pair_mean_bps=26.9, pair_med_bps=23, pair_win_pct=63.2, pair_t=2.23, perp_mean_bps=53.6, perp_win_pct=50, perp_t=1.54, hold_med_min=135, forced_pct=26.3, entry_sd_bps_med=30.2
+-- snap
+   0755_0830_beta=0.0224, 0755_0830_t=0.599, 0755_0830_r2=0.00614, 0755_0830_n=60, 0755_0830_basis0_std_bps=204, 0755_0830_ret_std_bps=58.5, 0755_0830_fade_mean_bps=-11.8, 0755_0830_fade_t=-1.6, 0755_1345_beta=0.255, 0755_1345_t=1.98, 0755_1345_r2=0.0631, 0755_1345_n=60, 0755_1345_basis0_std_bps=204, 0755_1345_ret_std_bps=207, 0755_1345_fade_mean_bps=-48, 0755_1345_fade_t=-1.81, 1325_1345_beta=0.0572, 1325_1345_t=1.18, 1325_1345_r2=0.0233, 1325_1345_n=60, 1325_1345_basis0_std_bps=291, 1325_1345_ret_std_bps=109, 1325_1345_fade_mean_bps=-17.9, 1325_1345_fade_t=-1.29, 1325_1430_beta=0.0384, 1325_1430_t=0.511, 1325_1430_r2=0.00449, 1325_1430_n=60, 1325_1430_basis0_std_bps=291, 1325_1430_ret_std_bps=167, 1325_1430_fade_mean_bps=-27.3, 1325_1430_fade_t=-1.28
+-- lag1
+   sig_sd_bps=15.3, n_5m=974, mean_5m_bps=0.439, t_5m=0.335, win_5m_pct=51.1, n_30m=887, mean_30m_bps=2.2, t_30m=0.677, win_30m_pct=49.4, per_day=13.3
+-- lag2
+   sig_sd_bps=15.3, n_5m=197, mean_5m_bps=-4.66, t_5m=-1.25, win_5m_pct=48.2, n_30m=172, mean_30m_bps=-2.07, t_30m=-0.233, win_30m_pct=48.3, per_day=2.7
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:0.011 -5:-0.018 -4:0.016 -3:-0.004 -2:0.009 -1:-0.033 +0:0.945 +1:-0.026 +2:0.028 +3:-0.011 +4:0.019 +5:-0.020 +6:0.018
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+0.0   671.0               59.330          50.265          63.037   0.726  0.902        -0.009        -0.384
+1.0   732.0               35.268          39.618          47.073   0.796  0.925         0.002         0.091
+2.0   732.0               29.424          30.838          38.663   0.787  0.918        -0.007        -0.337
+3.0   732.0               26.210          26.626          35.120   0.749  0.880        -0.022        -1.213
+4.0   732.0               33.695          26.024          34.269   0.746  0.878        -0.025        -1.354
+5.0   732.0               39.445          30.829          38.652   0.785  0.906         0.018         0.783
+6.0   366.0               52.952          27.386          33.445   0.702  0.699        -0.022        -0.863
+
+######## EWY/005930  (Samsung 005930 / USDKRW (scaled))
+-- basis
+   perp_ret_ar1=-0.0144, home_ret_ar1=-0.0814, n_bars=4.71e+03, n_days=61, mean_bps=1.41, std_bps=243, intra_std_bps=81, daily_mean_std_bps=230, ar1_5m=0.989, ar1_intra_5m=0.915, hl_bars=64.3, hl_intra_bars=7.8, abs_gt_50bps_pct=82.7, abs_gt_100bps_pct=65.1, p99_abs_bps=813
+-- beta
+   beta_5m=0.581, t_5m=121, r2_5m=0.756, n_5m=4.7e+03, perp_std_5m_bps=34.4, home_std_5m_bps=51.5, beta_30m=0.634, t_30m=144, r2_30m=0.825, n_30m=4.39e+03, perp_std_30m_bps=81.6, home_std_30m_bps=117
+-- pred
+   perp_fwd5m_on_dev_b=-0.00112, perp_fwd5m_on_dev_t=-0.345, home_fwd5m_on_dev_b=0.00627, home_fwd5m_on_dev_t=1.28, perp_fwd5m_on_home_lag5m_b=-0.0153, perp_fwd5m_on_home_lag5m_t=-1.6, perp_fwd5m_on_(home-perp)_5m_b=-0.0124, perp_fwd5m_on_(home-perp)_5m_t=-0.693, n_5m=4.63e+03, perp_fwd30m_on_dev_b=-0.00643, perp_fwd30m_on_dev_t=-0.821, home_fwd30m_on_dev_b=0.00371, home_fwd30m_on_dev_t=0.33, perp_fwd30m_on_home_lag5m_b=0.00905, perp_fwd30m_on_home_lag5m_t=0.382, perp_fwd30m_on_(home-perp)_5m_b=0.0354, perp_fwd30m_on_(home-perp)_5m_t=0.788, n_30m=4.32e+03
+-- mr_k2
+   n_trades=75, per_day=1.03, pair_mean_bps=-6.93, pair_med_bps=0, pair_win_pct=49.3, pair_t=-0.438, perp_mean_bps=22, perp_win_pct=49.3, perp_t=1, hold_med_min=155, forced_pct=34.7, entry_sd_bps_med=80.4
+-- mr_k3
+   n_trades=36, per_day=0.493, pair_mean_bps=4.24, pair_med_bps=22, pair_win_pct=52.8, pair_t=0.158, perp_mean_bps=38.5, perp_win_pct=52.8, perp_t=1.01, hold_med_min=188, forced_pct=22.2, entry_sd_bps_med=80.4
+-- snap
+   0755_0830_beta=0.00772, 0755_0830_t=0.368, 0755_0830_r2=0.00233, 0755_0830_n=60, 0755_0830_basis0_std_bps=366, 0755_0830_ret_std_bps=58.5, 0755_0830_fade_mean_bps=-4.79, 0755_0830_fade_t=-0.637, 0755_1345_beta=0.155, 0755_1345_t=2.16, 0755_1345_r2=0.0748, 0755_1345_n=60, 0755_1345_basis0_std_bps=366, 0755_1345_ret_std_bps=207, 0755_1345_fade_mean_bps=-34.6, 0755_1345_fade_t=-1.29, 1325_1345_beta=0.0468, 1325_1345_t=1.45, 1325_1345_r2=0.0348, 1325_1345_n=60, 1325_1345_basis0_std_bps=434, 1325_1345_ret_std_bps=109, 1325_1345_fade_mean_bps=-10.5, 1325_1345_fade_t=-0.747, 1325_1430_beta=0.0181, 1325_1430_t=0.359, 1325_1430_r2=0.00222, 1325_1430_n=60, 1325_1430_basis0_std_bps=434, 1325_1430_ret_std_bps=167, 1325_1430_fade_mean_bps=-6.05, 1325_1430_fade_t=-0.281
+-- lag1
+   sig_sd_bps=27.5, n_5m=1.08e+03, mean_5m_bps=0.447, t_5m=0.373, win_5m_pct=51.1, n_30m=990, mean_30m_bps=1.69, t_30m=0.585, win_30m_pct=49.7, per_day=14.8
+-- lag2
+   sig_sd_bps=27.5, n_5m=227, mean_5m_bps=-2.14, t_5m=-0.656, win_5m_pct=52.4, n_30m=212, mean_30m_bps=5.8, t_30m=0.8, win_30m_pct=51.9, per_day=3.11
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:0.002 -5:-0.023 -4:0.015 -3:-0.002 -2:0.012 -1:-0.042 +0:0.870 +1:-0.024 +2:0.028 +3:-0.007 +4:0.014 +5:-0.011 +6:0.013
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+0.0   671.0              118.791          50.265          75.553   0.555  0.756        -0.005        -0.561
+1.0   732.0               78.261          39.618          55.367   0.622  0.781        -0.002        -0.241
+2.0   732.0               61.968          30.838          46.921   0.599  0.784         0.009         1.189
+3.0   732.0               52.489          26.626          42.555   0.578  0.770        -0.006        -0.857
+4.0   732.0               72.656          26.024          40.555   0.586  0.759        -0.009        -1.163
+5.0   732.0               76.352          30.829          46.155   0.599  0.753         0.013         1.141
+6.0   366.0               95.438          27.386          43.527   0.500  0.601        -0.002        -0.141
+
+######## EWJ/N225  (Nikkei225 idx / USDJPY (scaled))
+-- basis
+   perp_ret_ar1=-0.00245, home_ret_ar1=0.0516, n_bars=3.71e+03, n_days=57, mean_bps=-4.37, std_bps=108, intra_std_bps=33.1, daily_mean_std_bps=103, ar1_5m=0.988, ar1_intra_5m=0.857, hl_bars=57.7, hl_intra_bars=4.48, abs_gt_50bps_pct=56.6, abs_gt_100bps_pct=33.6, p99_abs_bps=261
+-- beta
+   beta_5m=0.389, t_5m=44.9, r2_5m=0.356, n_5m=3.65e+03, perp_std_5m_bps=11.4, home_std_5m_bps=17.4, beta_30m=0.548, t_30m=73.3, r2_30m=0.636, n_30m=3.08e+03, perp_std_30m_bps=28.1, home_std_30m_bps=41
+-- pred
+   perp_fwd5m_on_dev_b=-0.0126, perp_fwd5m_on_dev_t=-4.72, home_fwd5m_on_dev_b=-0.00181, home_fwd5m_on_dev_t=-0.432, perp_fwd5m_on_home_lag5m_b=0.111, perp_fwd5m_on_home_lag5m_t=11.1, perp_fwd5m_on_(home-perp)_5m_b=0.159, perp_fwd5m_on_(home-perp)_5m_t=12.9, n_5m=3.58e+03, perp_fwd30m_on_dev_b=-0.036, perp_fwd30m_on_dev_t=-5.14, home_fwd30m_on_dev_b=0.000251, home_fwd30m_on_dev_t=0.0243, perp_fwd30m_on_home_lag5m_b=0.18, perp_fwd30m_on_home_lag5m_t=6.91, perp_fwd30m_on_(home-perp)_5m_b=0.255, perp_fwd30m_on_(home-perp)_5m_t=7.92, n_30m=3.02e+03
+-- mr_k2
+   n_trades=68, per_day=1.08, pair_mean_bps=4.11, pair_med_bps=1.27, pair_win_pct=54.4, pair_t=0.62, perp_mean_bps=8.12, perp_win_pct=58.8, perp_t=1.27, hold_med_min=130, forced_pct=69.1, entry_sd_bps_med=41.7
+-- mr_k3
+   n_trades=25, per_day=0.397, pair_mean_bps=13.7, pair_med_bps=14, pair_win_pct=60, pair_t=1.14, perp_mean_bps=0.437, perp_win_pct=60, perp_t=0.0341, hold_med_min=130, forced_pct=72, entry_sd_bps_med=41.7
+-- snap
+   0755_0830_beta=0.00934, 0755_0830_t=0.494, 0755_0830_r2=0.00449, 0755_0830_n=56, 0755_0830_basis0_std_bps=275, 0755_0830_ret_std_bps=38.3, 0755_0830_fade_mean_bps=-3.46, 0755_0830_fade_t=-0.678, 0755_1345_beta=0.0174, 0755_1345_t=0.462, 0755_1345_r2=0.00394, 0755_1345_n=56, 0755_1345_basis0_std_bps=275, 0755_1345_ret_std_bps=76.3, 0755_1345_fade_mean_bps=-6.34, 0755_1345_fade_t=-0.606, 1325_1345_beta=0.0127, 1325_1345_t=0.824, 1325_1345_r2=0.0124, 1325_1345_n=56, 1325_1345_basis0_std_bps=284, 1325_1345_ret_std_bps=32.3, 1325_1345_fade_mean_bps=-4.16, 1325_1345_fade_t=-0.919, 1325_1430_beta=0.00544, 1325_1430_t=0.236, 1325_1430_r2=0.00103, 1325_1430_n=56, 1325_1430_basis0_std_bps=284, 1325_1430_ret_std_bps=48.1, 1325_1430_fade_mean_bps=-6.3, 1325_1430_fade_t=-0.962
+-- lag1
+   sig_sd_bps=14.7, n_5m=780, mean_5m_bps=3.88, t_5m=8.13, win_5m_pct=59.9, n_30m=689, mean_30m_bps=5.28, t_30m=4.51, win_30m_pct=56, per_day=12.4
+-- lag2
+   sig_sd_bps=14.7, n_5m=138, mean_5m_bps=4.81, t_5m=3.76, win_5m_pct=58, n_30m=134, mean_30m_bps=10.2, t_30m=3.48, win_30m_pct=59, per_day=2.19
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:0.005 -5:0.009 -4:-0.009 -3:0.000 -2:-0.014 -1:0.008 +0:0.583 +1:0.183 +2:0.028 +3:0.039 +4:0.033 +5:0.012 +6:-0.005
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+0.0   627.0               46.107          21.304          29.188   0.338  0.339        -0.020        -2.801
+1.0   684.0               29.637          12.047          17.845   0.466  0.459        -0.004        -0.724
+2.0   342.0               27.311          10.290          13.961   0.444  0.368         0.009         1.041
+3.0   342.0               24.450           9.810          21.988   0.228  0.255        -0.016        -2.300
+4.0   684.0               26.322           8.019          11.844   0.399  0.334        -0.014        -2.938
+5.0   684.0               30.980           8.680          12.143   0.445  0.386        -0.019        -2.793
+6.0   342.0               35.956           9.526           9.348   0.452  0.187        -0.004        -0.268
+
+######## EWT/0050.TW  (0050.TW / USDTWD (scaled))
+-- basis
+   perp_ret_ar1=0.0118, home_ret_ar1=-0.0159, n_bars=2.7e+03, n_days=51, mean_bps=4.34, std_bps=63.4, intra_std_bps=29.4, daily_mean_std_bps=56.4, ar1_5m=0.949, ar1_intra_5m=0.765, hl_bars=13.2, hl_intra_bars=2.59, abs_gt_50bps_pct=41.8, abs_gt_100bps_pct=12, p99_abs_bps=166
+-- beta
+   beta_5m=0.58, t_5m=30.6, r2_5m=0.258, n_5m=2.7e+03, perp_std_5m_bps=19.6, home_std_5m_bps=17.1, beta_30m=0.888, t_30m=57.8, r2_30m=0.577, n_30m=2.45e+03, perp_std_30m_bps=46.1, home_std_30m_bps=39.4
+-- pred
+   perp_fwd5m_on_dev_b=-0.0387, perp_fwd5m_on_dev_t=-5.62, home_fwd5m_on_dev_b=0.00571, home_fwd5m_on_dev_t=0.938, perp_fwd5m_on_home_lag5m_b=0.232, perp_fwd5m_on_home_lag5m_t=11, perp_fwd5m_on_(home-perp)_5m_b=0.188, perp_fwd5m_on_(home-perp)_5m_t=9.44, n_5m=2.64e+03, perp_fwd30m_on_dev_b=-0.0798, perp_fwd30m_on_dev_t=-4.81, home_fwd30m_on_dev_b=0.0174, home_fwd30m_on_dev_t=1.21, perp_fwd30m_on_home_lag5m_b=0.376, perp_fwd30m_on_home_lag5m_t=7.26, perp_fwd30m_on_(home-perp)_5m_b=0.269, perp_fwd30m_on_(home-perp)_5m_t=5.45, n_30m=2.39e+03
+-- mr_k2
+   n_trades=59, per_day=1.11, pair_mean_bps=42.7, pair_med_bps=48.1, pair_win_pct=83.1, pair_t=8.93, perp_mean_bps=43.8, perp_win_pct=74.6, perp_t=4.55, hold_med_min=75, forced_pct=18.6, entry_sd_bps_med=37.8
+-- mr_k3
+   n_trades=15, per_day=0.283, pair_mean_bps=50.9, pair_med_bps=59.5, pair_win_pct=80, pair_t=5.77, perp_mean_bps=40.9, perp_win_pct=60, perp_t=2.4, hold_med_min=75, forced_pct=20, entry_sd_bps_med=37.8
+-- snap
+   0755_0830_beta=0.0401, 0755_0830_t=0.665, 0755_0830_r2=0.00913, 0755_0830_n=50, 0755_0830_basis0_std_bps=109, 0755_0830_ret_std_bps=45.6, 0755_0830_fade_mean_bps=-3.79, 0755_0830_fade_t=-0.59, 0755_1345_beta=0.0908, 0755_1345_t=0.565, 0755_1345_r2=0.00661, 0755_1345_n=50, 0755_1345_basis0_std_bps=109, 0755_1345_ret_std_bps=121, 0755_1345_fade_mean_bps=-9.63, 0755_1345_fade_t=-0.562, 1325_1345_beta=0.0603, 1325_1345_t=1.19, 1325_1345_r2=0.0288, 1325_1345_n=50, 1325_1345_basis0_std_bps=151, 1325_1345_ret_std_bps=53.8, 1325_1345_fade_mean_bps=-1.93, 1325_1345_fade_t=-0.254, 1325_1430_beta=-0.0155, 1325_1430_t=-0.188, 1325_1430_r2=0.000738, 1325_1430_n=50, 1325_1430_basis0_std_bps=151, 1325_1430_ret_std_bps=86.2, 1325_1430_fade_mean_bps=4.18, 1325_1430_fade_t=0.342
+-- lag1
+   sig_sd_bps=18.3, n_5m=704, mean_5m_bps=6.19, t_5m=6.91, win_5m_pct=55.1, n_30m=652, mean_30m_bps=7.83, t_30m=3.9, win_30m_pct=56, per_day=13.3
+-- lag2
+   sig_sd_bps=18.3, n_5m=147, mean_5m_bps=6.17, t_5m=3.2, win_5m_pct=57.8, n_30m=137, mean_30m_bps=9.44, t_30m=1.86, win_30m_pct=56.2, per_day=2.77
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:0.018 -5:0.006 -4:-0.004 -3:0.015 -2:-0.027 -1:0.009 +0:0.508 +1:0.209 +2:0.078 +3:0.025 +4:-0.014 +5:0.010 +6:0.026
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+1.0   561.0               38.500          27.559          25.205   0.669  0.384        -0.029        -1.728
+2.0   612.0               25.911          18.939          16.287   0.536  0.207        -0.040        -3.276
+3.0   612.0               23.827          16.721          14.421   0.493  0.184        -0.047        -3.617
+4.0   612.0               25.794          15.110          12.665   0.457  0.144        -0.047        -3.030
+5.0   306.0               31.009          16.584          12.707   0.558  0.179        -0.053        -2.376
+
+######## EWT/2330.TW  (2330.TW / USDTWD (scaled))
+-- basis
+   perp_ret_ar1=0.0118, home_ret_ar1=-0.236, n_bars=2.7e+03, n_days=51, mean_bps=0.326, std_bps=128, intra_std_bps=48.5, daily_mean_std_bps=119, ar1_5m=0.978, ar1_intra_5m=0.826, hl_bars=31, hl_intra_bars=3.62, abs_gt_50bps_pct=63.3, abs_gt_100bps_pct=39.4, p99_abs_bps=330
+-- beta
+   beta_5m=0.287, t_5m=16.4, r2_5m=0.091, n_5m=2.7e+03, perp_std_5m_bps=19.6, home_std_5m_bps=20.6, beta_30m=0.657, t_30m=31.8, r2_30m=0.292, n_30m=2.45e+03, perp_std_30m_bps=46.1, home_std_30m_bps=38
+-- pred
+   perp_fwd5m_on_dev_b=-0.00365, perp_fwd5m_on_dev_t=-0.973, home_fwd5m_on_dev_b=0.0115, home_fwd5m_on_dev_t=2.92, perp_fwd5m_on_home_lag5m_b=0.0888, perp_fwd5m_on_home_lag5m_t=4.97, perp_fwd5m_on_(home-perp)_5m_b=0.0574, perp_fwd5m_on_(home-perp)_5m_t=3.69, n_5m=2.64e+03, perp_fwd30m_on_dev_b=0.00264, perp_fwd30m_on_dev_t=0.293, home_fwd30m_on_dev_b=0.0228, home_fwd30m_on_dev_t=3.07, perp_fwd30m_on_home_lag5m_b=0.131, perp_fwd30m_on_home_lag5m_t=2.95, perp_fwd30m_on_(home-perp)_5m_b=0.0568, perp_fwd30m_on_(home-perp)_5m_t=1.48, n_30m=2.39e+03
+-- mr_k2
+   n_trades=52, per_day=0.981, pair_mean_bps=27, pair_med_bps=43.5, pair_win_pct=65.4, pair_t=2.34, perp_mean_bps=16.6, perp_win_pct=65.4, perp_t=1.34, hold_med_min=95, forced_pct=28.8, entry_sd_bps_med=59.6
+-- mr_k3
+   n_trades=15, per_day=0.283, pair_mean_bps=26.6, pair_med_bps=35.7, pair_win_pct=60, pair_t=1.18, perp_mean_bps=5.16, perp_win_pct=53.3, perp_t=0.275, hold_med_min=100, forced_pct=33.3, entry_sd_bps_med=59.6
+-- snap
+   0755_0830_beta=0.0302, 0755_0830_t=0.947, 0755_0830_r2=0.0184, 0755_0830_n=50, 0755_0830_basis0_std_bps=205, 0755_0830_ret_std_bps=45.6, 0755_0830_fade_mean_bps=-6.03, 0755_0830_fade_t=-0.943, 0755_1345_beta=-0.000173, 0755_1345_t=-0.00202, 0755_1345_r2=8.53e-08, 0755_1345_n=50, 0755_1345_basis0_std_bps=205, 0755_1345_ret_std_bps=121, 0755_1345_fade_mean_bps=-13.6, 0755_1345_fade_t=-0.794, 1325_1345_beta=0.0404, 1325_1345_t=1.18, 1325_1345_r2=0.028, 1325_1345_n=50, 1325_1345_basis0_std_bps=223, 1325_1345_ret_std_bps=53.8, 1325_1345_fade_mean_bps=-9.56, 1325_1345_fade_t=-1.27, 1325_1430_beta=0.00182, 1325_1430_t=0.0327, 1325_1430_r2=2.22e-05, 1325_1430_n=50, 1325_1430_basis0_std_bps=223, 1325_1430_ret_std_bps=86.2, 1325_1430_fade_mean_bps=-6.02, 1325_1430_fade_t=-0.494
+-- lag1
+   sig_sd_bps=23.8, n_5m=736, mean_5m_bps=2.46, t_5m=3.06, win_5m_pct=51.1, n_30m=666, mean_30m_bps=1.23, t_30m=0.633, win_30m_pct=50.9, per_day=13.9
+-- lag2
+   sig_sd_bps=23.8, n_5m=125, mean_5m_bps=2.21, t_5m=0.953, win_5m_pct=52, n_30m=115, mean_30m_bps=3.19, t_30m=0.64, win_30m_pct=53.9, per_day=2.36
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:-0.008 -5:-0.008 -4:0.025 -3:-0.032 -2:0.005 -1:0.001 +0:0.302 +1:0.096 +2:0.031 +3:0.016 +4:-0.030 +5:0.008 +6:0.017
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+1.0   561.0               64.949          27.559          25.124   0.408  0.142        -0.000        -0.046
+2.0   612.0               40.647          18.939          19.778   0.251  0.067        -0.005        -0.788
+3.0   612.0               35.496          16.721          19.786   0.247  0.087        -0.008        -1.209
+4.0   612.0               42.899          15.110          18.270   0.190  0.052         0.003         0.297
+5.0   306.0               56.212          16.584          18.933   0.238  0.072        -0.018        -1.447
+
+######## HK0700/700.HK  (700.HK (perp quoted in HKD))
+-- basis
+   perp_ret_ar1=0.0874, home_ret_ar1=-0.0768, n_bars=1.1e+03, n_days=17, mean_bps=25.9, std_bps=26.8, intra_std_bps=23.7, daily_mean_std_bps=13.4, ar1_5m=0.71, ar1_intra_5m=0.626, hl_bars=2.02, hl_intra_bars=1.48, abs_gt_50bps_pct=14.5, abs_gt_100bps_pct=1.36, p99_abs_bps=102
+-- beta
+   beta_5m=0.527, t_5m=21.8, r2_5m=0.308, n_5m=1.07e+03, perp_std_5m_bps=19.3, home_std_5m_bps=20.3, beta_30m=0.81, t_30m=42.5, r2_30m=0.668, n_30m=900, perp_std_30m_bps=45.4, home_std_30m_bps=45.8
+-- pred
+   perp_fwd5m_on_dev_b=-0.235, perp_fwd5m_on_dev_t=-9.99, home_fwd5m_on_dev_b=0.0192, home_fwd5m_on_dev_t=0.73, perp_fwd5m_on_home_lag5m_b=0.182, perp_fwd5m_on_home_lag5m_t=6.94, perp_fwd5m_on_(home-perp)_5m_b=0.219, perp_fwd5m_on_(home-perp)_5m_t=7.15, n_5m=1.05e+03, perp_fwd30m_on_dev_b=-0.551, perp_fwd30m_on_dev_t=-9.21, home_fwd30m_on_dev_b=0.064, home_fwd30m_on_dev_t=1.01, perp_fwd30m_on_home_lag5m_b=0.326, perp_fwd30m_on_home_lag5m_t=4.76, perp_fwd30m_on_(home-perp)_5m_b=0.414, perp_fwd30m_on_(home-perp)_5m_t=4.97, n_30m=888
+-- mr_k2
+   n_trades=25, per_day=1.47, pair_mean_bps=34.1, pair_med_bps=33.8, pair_win_pct=80, pair_t=5.81, perp_mean_bps=27.9, perp_win_pct=68, perp_t=2.72, hold_med_min=20, forced_pct=20, entry_sd_bps_med=21.8
+-- mr_k3
+   n_trades=5, per_day=0.294, pair_mean_bps=60.9, pair_med_bps=65, pair_win_pct=80, pair_t=3.28, perp_mean_bps=67.6, perp_win_pct=80, perp_t=3.25, hold_med_min=15, forced_pct=20, entry_sd_bps_med=21.8
+-- snap
+   0755_0830_beta=-0.366, 0755_0830_t=-0.61, 0755_0830_r2=0.0259, 0755_0830_n=16, 0755_0830_basis0_std_bps=15.1, 0755_0830_ret_std_bps=34.4, 0755_0830_fade_mean_bps=7.44, 0755_0830_fade_t=0.882, 0755_1345_beta=-0.762, 0755_1345_t=-1.2, 0755_1345_r2=0.0932, 0755_1345_n=16, 0755_1345_basis0_std_bps=15.1, 0755_1345_ret_std_bps=37.7, 0755_1345_fade_mean_bps=9.04, 0755_1345_fade_t=0.951, 1325_1345_beta=-0.293, 1325_1345_t=-2.18, 1325_1345_r2=0.253, 1325_1345_n=16, 1325_1345_basis0_std_bps=41.6, 1325_1345_ret_std_bps=24.2, 1325_1345_fade_mean_bps=12.2, 1325_1345_fade_t=1.94, 1325_1430_beta=-0.412, 1325_1430_t=-1.66, 1325_1430_r2=0.165, 1325_1430_n=16, 1325_1430_basis0_std_bps=41.6, 1325_1430_ret_std_bps=42.2, 1325_1430_fade_mean_bps=16.3, 1325_1430_fade_t=1.44
+-- lag1
+   sig_sd_bps=18.7, n_5m=211, mean_5m_bps=6.39, t_5m=4.29, win_5m_pct=64, n_30m=185, mean_30m_bps=10.9, t_30m=2.75, win_30m_pct=57.8, per_day=12.4
+-- lag2
+   sig_sd_bps=18.7, n_5m=45, mean_5m_bps=14.4, t_5m=3.34, win_5m_pct=80, n_30m=39, mean_30m_bps=28.6, t_30m=3.67, win_30m_pct=66.7, per_day=2.65
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:-0.034 -5:-0.009 -4:0.023 -3:0.018 -2:-0.001 -1:-0.035 +0:0.555 +1:0.211 +2:0.033 +3:0.081 +4:0.065 +5:0.103 +6:-0.077
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+1.0    80.0               31.486          47.758          35.884   0.800  0.609        -0.356        -3.443
+2.0   192.0               22.523          23.312          27.658   0.576  0.468        -0.344        -5.732
+3.0   203.0               25.191          21.822          18.320   0.253  0.045        -0.198        -3.563
+5.0   187.0               22.301          16.986          17.818   0.417  0.341        -0.146        -3.668
+6.0   204.0               18.753          12.457          13.047   0.341  0.128        -0.217        -5.626
+7.0   204.0               18.255          11.575          11.795   0.410  0.175        -0.196        -4.588
+
+######## TENCENT/700.HK  (700.HK / USDHKD)
+-- basis
+   perp_ret_ar1=0.0486, home_ret_ar1=-0.0746, n_bars=1.1e+03, n_days=17, mean_bps=36.4, std_bps=28.1, intra_std_bps=24.5, daily_mean_std_bps=14.6, ar1_5m=0.695, ar1_intra_5m=0.596, hl_bars=1.91, hl_intra_bars=1.34, abs_gt_50bps_pct=27.6, abs_gt_100bps_pct=2.09, p99_abs_bps=109
+-- beta
+   beta_5m=0.498, t_5m=18.8, r2_5m=0.249, n_5m=1.07e+03, perp_std_5m_bps=20.2, home_std_5m_bps=20.3, beta_30m=0.83, t_30m=40.1, r2_30m=0.642, n_30m=898, perp_std_30m_bps=47.4, home_std_30m_bps=45.8
+-- pred
+   perp_fwd5m_on_dev_b=-0.241, perp_fwd5m_on_dev_t=-10.3, home_fwd5m_on_dev_b=0.0242, home_fwd5m_on_dev_t=0.959, perp_fwd5m_on_home_lag5m_b=0.177, perp_fwd5m_on_home_lag5m_t=6.19, perp_fwd5m_on_(home-perp)_5m_b=0.212, perp_fwd5m_on_(home-perp)_5m_t=6.92, n_5m=1.05e+03, perp_fwd30m_on_dev_b=-0.656, perp_fwd30m_on_dev_t=-11.4, home_fwd30m_on_dev_b=-0.0546, home_fwd30m_on_dev_t=-0.912, perp_fwd30m_on_home_lag5m_b=0.334, perp_fwd30m_on_home_lag5m_t=4.66, perp_fwd30m_on_(home-perp)_5m_b=0.352, perp_fwd30m_on_(home-perp)_5m_t=4.39, n_30m=886
+-- mr_k2
+   n_trades=31, per_day=1.82, pair_mean_bps=36.8, pair_med_bps=41.1, pair_win_pct=90.3, pair_t=10.5, perp_mean_bps=26.7, perp_win_pct=77.4, perp_t=4.39, hold_med_min=15, forced_pct=12.9, entry_sd_bps_med=23.5
+-- mr_k3
+   n_trades=6, per_day=0.353, pair_mean_bps=52.8, pair_med_bps=51.7, pair_win_pct=83.3, pair_t=4.25, perp_mean_bps=31.6, perp_win_pct=66.7, perp_t=1.43, hold_med_min=7.5, forced_pct=16.7, entry_sd_bps_med=23.5
+-- snap
+   0755_0830_beta=-0.878, 0755_0830_t=-1.27, 0755_0830_r2=0.0967, 0755_0830_n=17, 0755_0830_basis0_std_bps=19.5, 0755_0830_ret_std_bps=55, 0755_0830_fade_mean_bps=12.5, 0755_0830_fade_t=1.72, 0755_1345_beta=-2.03, 0755_1345_t=-2.52, 0755_1345_r2=0.313, 0755_1345_n=16, 0755_1345_basis0_std_bps=19.8, 0755_1345_ret_std_bps=71.9, 0755_1345_fade_mean_bps=28.1, 0755_1345_fade_t=1.66, 1325_1345_beta=0.0139, 1325_1345_t=0.125, 1325_1345_r2=0.00111, 1325_1345_n=16, 1325_1345_basis0_std_bps=57.5, 1325_1345_ret_std_bps=24, 1325_1345_fade_mean_bps=-1.11, 1325_1345_fade_t=-0.179, 1325_1430_beta=-0.0103, 1325_1430_t=-0.0585, 1325_1430_r2=0.000245, 1325_1430_n=16, 1325_1430_basis0_std_bps=57.5, 1325_1430_ret_std_bps=37.8, 1325_1430_fade_mean_bps=-5.76, 1325_1430_fade_t=-0.565
+-- lag1
+   sig_sd_bps=20.3, n_5m=245, mean_5m_bps=6.48, t_5m=4.75, win_5m_pct=60, n_30m=218, mean_30m_bps=10.3, t_30m=2.98, win_30m_pct=57.3, per_day=14.4
+-- lag2
+   sig_sd_bps=20.3, n_5m=48, mean_5m_bps=13.8, t_5m=3.09, win_5m_pct=70.8, n_30m=41, mean_30m_bps=17, t_30m=1.69, win_30m_pct=73.2, per_day=2.82
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:-0.024 -5:0.003 -4:0.011 -3:0.022 -2:0.025 -1:-0.011 +0:0.499 +1:0.189 +2:0.072 +3:0.081 +4:0.063 +5:0.074 +6:-0.073
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+1.0    80.0               25.220          51.051          35.878   0.724  0.628        -0.387        -3.498
+2.0   192.0               21.631          23.863          27.652   0.589  0.466        -0.251        -4.038
+3.0   201.0               29.276          21.921          18.263   0.213  0.031        -0.182        -3.320
+5.0   187.0               26.075          25.728          17.823   0.445  0.139        -0.231        -5.092
+6.0   204.0               20.286          13.271          13.026   0.266  0.068        -0.222        -6.130
+7.0   204.0               20.675          11.233          11.808   0.270  0.080        -0.140        -3.801
+
+######## HK1810/1810.HK  (1810.HK (perp quoted in HKD))
+-- basis
+   perp_ret_ar1=-0.0713, home_ret_ar1=-0.112, n_bars=1.1e+03, n_days=17, mean_bps=14.5, std_bps=47.6, intra_std_bps=41.4, daily_mean_std_bps=24.2, ar1_5m=0.741, ar1_intra_5m=0.659, hl_bars=2.31, hl_intra_bars=1.66, abs_gt_50bps_pct=20, abs_gt_100bps_pct=3.9, p99_abs_bps=181
+-- beta
+   beta_5m=0.621, t_5m=21.4, r2_5m=0.301, n_5m=1.07e+03, perp_std_5m_bps=33.3, home_std_5m_bps=29.4, beta_30m=0.828, t_30m=35.7, r2_30m=0.586, n_30m=899, perp_std_30m_bps=65.8, home_std_30m_bps=60.9
+-- pred
+   perp_fwd5m_on_dev_b=-0.205, perp_fwd5m_on_dev_t=-9.75, home_fwd5m_on_dev_b=0.022, home_fwd5m_on_dev_t=1.03, perp_fwd5m_on_home_lag5m_b=0.0903, perp_fwd5m_on_home_lag5m_t=2.91, perp_fwd5m_on_(home-perp)_5m_b=0.195, perp_fwd5m_on_(home-perp)_5m_t=6.4, n_5m=1.05e+03, perp_fwd30m_on_dev_b=-0.526, perp_fwd30m_on_dev_t=-11.6, home_fwd30m_on_dev_b=0.0323, home_fwd30m_on_dev_t=0.695, perp_fwd30m_on_home_lag5m_b=0.144, perp_fwd30m_on_home_lag5m_t=2.18, perp_fwd30m_on_(home-perp)_5m_b=0.238, perp_fwd30m_on_(home-perp)_5m_t=3.53, n_30m=887
+-- mr_k2
+   n_trades=27, per_day=1.59, pair_mean_bps=64.5, pair_med_bps=37.9, pair_win_pct=96.3, pair_t=4.7, perp_mean_bps=55.6, perp_win_pct=92.6, perp_t=5.12, hold_med_min=15, forced_pct=25.9, entry_sd_bps_med=35.9
+-- mr_k3
+   n_trades=4, per_day=0.235, pair_mean_bps=170, pair_med_bps=134, pair_win_pct=100, pair_t=2.51, perp_mean_bps=145, perp_win_pct=100, perp_t=5.16, hold_med_min=42.5, forced_pct=0, entry_sd_bps_med=35.9
+-- snap
+   0755_0830_beta=-0.117, 0755_0830_t=-0.346, 0755_0830_r2=0.00848, 0755_0830_n=16, 0755_0830_basis0_std_bps=28.3, 0755_0830_ret_std_bps=36, 0755_0830_fade_mean_bps=11.4, 0755_0830_fade_t=1.16, 0755_1345_beta=-1.58, 0755_1345_t=-2.37, 0755_1345_r2=0.286, 0755_1345_n=16, 0755_1345_basis0_std_bps=28.3, 0755_1345_ret_std_bps=83.8, 0755_1345_fade_mean_bps=40.1, 0755_1345_fade_t=2.12, 1325_1345_beta=-0.441, 1325_1345_t=-5.3, 1325_1345_r2=0.667, 1325_1345_n=16, 1325_1345_basis0_std_bps=114, 1325_1345_ret_std_bps=61.3, 1325_1345_fade_mean_bps=26.1, 1325_1345_fade_t=1.76, 1325_1430_beta=-0.603, 1325_1430_t=-5.46, 1325_1430_r2=0.68, 1325_1430_n=16, 1325_1430_basis0_std_bps=114, 1325_1430_ret_std_bps=83, 1325_1430_fade_mean_bps=51.9, 1325_1430_fade_t=2.95
+-- lag1
+   sig_sd_bps=30, n_5m=198, mean_5m_bps=10.2, t_5m=3.87, win_5m_pct=60.6, n_30m=167, mean_30m_bps=16.8, t_30m=2.93, win_30m_pct=62.3, per_day=11.6
+-- lag2
+   sig_sd_bps=30, n_5m=47, mean_5m_bps=23.6, t_5m=3.44, win_5m_pct=63.8, n_30m=39, mean_30m_bps=14.3, t_30m=0.991, win_30m_pct=61.5, per_day=2.76
+-- leadlag corr(perp_t, home_{t-k}) k=-6..6 (k>0 home leads):
+   -6:-0.070 -5:-0.021 -4:0.021 -3:-0.026 -2:0.088 -1:-0.037 +0:0.549 +1:0.090 +2:0.048 +3:-0.022 +4:0.020 +5:0.015 +6:0.009
+-- hourly profile (UTC hour)
+          n  basis_intra_std_bps  perp5m_std_bps  home5m_std_bps  beta5m     r2  fwd_on_dev_b  fwd_on_dev_t
+hour                                                                                                       
+1.0    80.0               68.506          85.467          63.762   0.664  0.576        -0.170        -2.478
+2.0   192.0               37.955          38.211          35.366   0.740  0.469        -0.169        -2.922
+3.0   202.0               41.922          36.021          22.033   0.454  0.077        -0.290        -5.815
+5.0   187.0               27.298          33.244          23.826   0.600  0.217        -0.315        -5.108
+6.0   204.0               30.550          21.793          21.331   0.504  0.243        -0.179        -3.614
+7.0   204.0               32.371          23.883          17.416   0.357  0.068        -0.342        -7.775
+
+== scan_adr_reverse.py
+
+######## SAMSUNG/005930
+-- basis_in_session
+   perp_ret_ar1=-0.0578, home_ret_ar1=-0.0874, n_bars=4.02e+03, n_days=52, mean_bps=34.2, std_bps=38, intra_std_bps=28.1, daily_mean_std_bps=26.5, ar1_5m=0.837, ar1_intra_5m=0.7, hl_bars=3.9, hl_intra_bars=1.94, abs_gt_50bps_pct=28.7, abs_gt_100bps_pct=5.33, p99_abs_bps=155
+-- beta_in_session
+   beta_5m=0.88, t_5m=154, r2_5m=0.856, n_5m=3.97e+03, perp_std_5m_bps=50.1, home_std_5m_bps=52.7, beta_30m=0.948, t_30m=253, r2_30m=0.945, n_30m=3.71e+03, perp_std_30m_bps=116, home_std_30m_bps=119
+-- mr_k2_in_session
+   n_trades=117, per_day=2.17, pair_mean_bps=29.7, pair_med_bps=29.8, pair_win_pct=82.1, pair_t=8.77, perp_mean_bps=7.53, perp_win_pct=47.9, perp_t=0.63, hold_med_min=20, forced_pct=25.6, entry_sd_bps_med=22.6
+-- offhours
+   n_days=51, gap_on_perpoff_b=1.02, gap_on_perpoff_t=22, gap_on_perpoff_r2=0.908, gap_std_bps=506, perpoff_std_bps=472, resid_std_bps=154, basis_pre_mean_bps=41.6, basis_pre_std_bps=132, perp_post30_on_perp_prior8h_b=-0.0807, perp_post30_on_perp_prior8h_t=-0.702, perp_post60_on_perp_prior8h_b=-0.197, perp_post60_on_perp_prior8h_t=-1.45, perp_post30_on_perp_off_b=-0.00514, perp_post30_on_perp_off_t=-0.0808, perp_post60_on_perp_off_b=0.00586, perp_post60_on_perp_off_t=0.0763, perp_post30_on_basis_pre_b=-0.875, perp_post30_on_basis_pre_t=-4.6, perp_post60_on_basis_pre_b=-0.625, perp_post60_on_basis_pre_t=-2.41, perp_post30b_on_basis_open5_b=0.9, perp_post30b_on_basis_open5_t=1.78, perp_post60b_on_basis_open5_b=1.81, perp_post60b_on_basis_open5_t=2.63, fade5_post30_mean_bps=3.17, fade5_post30_win_pct=51, basis_open5_std_bps=44, home_post30_on_basis_pre_b=0.0118, home_post30_on_basis_pre_t=0.065, home_post60_on_basis_pre_b=0.253, home_post60_on_basis_pre_t=0.999, gap_on_perpUS_b=1, gap_on_perpUS_t=4.2, gap_on_perpUS_r2=0.264, fade_post30_mean_bps=105, fade_post30_win_pct=72.5, fade_post30_bigHalf_mean_bps=147
+-- tail
+   open_gap_std_bps=484, open_gap_maxabs_bps=1.91e+03, first5m_rev_std_bps=100, first5m_rev_maxabs_bps=261, days_first5m_rev_gt100bps=15, basis_firstbar_std_bps=44.9, basis_firstbar_maxabs_bps=207, basis_maxabs_bps=236, basis_gt200bps_bars=7, fx_5m_std_bps=4.86, fx_5m_maxabs_bps=99.6, fx_gt30bps_5m_bars=38
+-- vs_ewy
+   n=51, gap_on_ewyoff_b=1.28, gap_on_ewyoff_t=14.4, gap_on_ewyoff_r2=0.808, gap_on_ewyUS_b=1.36, gap_on_ewyUS_t=5.11, gap_on_ewyUS_r2=0.348, perpoff_on_ewyoff_b=1.22, perpoff_on_ewyoff_t=16.2, perpoff_on_ewyoff_r2=0.842, gap_on_perpoff_resid_b=0.871, gap_on_perpoff_resid_t=7.61
+-- leadlag
+   -6=0.00103, -5=0.0105, -4=0.00977, -3=-0.00251, -2=0.0385, -1=-0.0566, 0=0.925, 1=-0.0392, 2=0.0362, 3=-0.00607, 4=0.00109, 5=0.00353, 6=0.00642
+
+######## SKHYNIX/000660
+-- basis_in_session
+   perp_ret_ar1=-0.027, home_ret_ar1=-0.0322, n_bars=4.02e+03, n_days=52, mean_bps=56.6, std_bps=56.7, intra_std_bps=39.9, daily_mean_std_bps=40.5, ar1_5m=0.909, ar1_intra_5m=0.818, hl_bars=7.25, hl_intra_bars=3.45, abs_gt_50bps_pct=45.3, abs_gt_100bps_pct=14.8, p99_abs_bps=279
+-- beta_in_session
+   beta_5m=0.861, t_5m=181, r2_5m=0.891, n_5m=3.97e+03, perp_std_5m_bps=56.9, home_std_5m_bps=62.4, beta_30m=0.879, t_30m=262, r2_30m=0.949, n_30m=3.71e+03, perp_std_30m_bps=134, home_std_30m_bps=149
+-- mr_k2_in_session
+   n_trades=88, per_day=1.63, pair_mean_bps=36.2, pair_med_bps=27.4, pair_win_pct=77.3, pair_t=7.51, perp_mean_bps=14.9, perp_win_pct=50, perp_t=1.08, hold_med_min=27.5, forced_pct=30.7, entry_sd_bps_med=30.8
+-- offhours
+   n_days=51, gap_on_perpoff_b=1.06, gap_on_perpoff_t=25.3, gap_on_perpoff_r2=0.929, gap_std_bps=576, perpoff_std_bps=524, resid_std_bps=157, basis_pre_mean_bps=63.8, basis_pre_std_bps=157, perp_post30_on_perp_prior8h_b=0.0246, perp_post30_on_perp_prior8h_t=0.208, perp_post60_on_perp_prior8h_b=-0.0341, perp_post60_on_perp_prior8h_t=-0.24, perp_post30_on_perp_off_b=0.0262, perp_post30_on_perp_off_t=0.372, perp_post60_on_perp_off_b=0.0516, perp_post60_on_perp_off_t=0.613, perp_post30_on_basis_pre_b=-0.808, perp_post30_on_basis_pre_t=-3.93, perp_post60_on_basis_pre_b=-0.568, perp_post60_on_basis_pre_t=-2.1, perp_post30b_on_basis_open5_b=0.208, perp_post30b_on_basis_open5_t=0.578, perp_post60b_on_basis_open5_b=0.293, perp_post60b_on_basis_open5_t=0.584, fade5_post30_mean_bps=41.2, fade5_post30_win_pct=56.9, basis_open5_std_bps=81.3, home_post30_on_basis_pre_b=-0.0717, home_post30_on_basis_pre_t=-0.381, home_post60_on_basis_pre_b=0.26, home_post60_on_basis_pre_t=0.914, gap_on_perpUS_b=1.1, gap_on_perpUS_t=5.61, gap_on_perpUS_r2=0.391, fade_post30_mean_bps=97.4, fade_post30_win_pct=62.7, fade_post30_bigHalf_mean_bps=120
+-- tail
+   open_gap_std_bps=562, open_gap_maxabs_bps=2.03e+03, first5m_rev_std_bps=106, first5m_rev_maxabs_bps=303, days_first5m_rev_gt100bps=16, basis_firstbar_std_bps=81.9, basis_firstbar_maxabs_bps=367, basis_maxabs_bps=667, basis_gt200bps_bars=123, fx_5m_std_bps=4.86, fx_5m_maxabs_bps=99.6, fx_gt30bps_5m_bars=38
+-- vs_ewy
+   n=51, gap_on_ewyoff_b=1.48, gap_on_ewyoff_t=16.1, gap_on_ewyoff_r2=0.84, gap_on_ewyUS_b=1.7, gap_on_ewyUS_t=5.93, gap_on_ewyUS_r2=0.417, perpoff_on_ewyoff_b=1.34, perpoff_on_ewyoff_t=15.4, perpoff_on_ewyoff_r2=0.829, gap_on_perpoff_resid_b=0.83, gap_on_perpoff_resid_t=8.75
+-- leadlag
+   -6=0.0384, -5=-0.0183, -4=0.0203, -3=-0.0096, -2=0.0327, -1=-0.0176, 0=0.944, 1=-0.0148, 2=0.0224, 3=0.00158, 4=0.0113, 5=-0.000522, 6=0.0353
+
+######## HYUNDAI/005380
+-- basis_in_session
+   perp_ret_ar1=-0.0356, home_ret_ar1=-0.0939, n_bars=3.94e+03, n_days=51, mean_bps=27.1, std_bps=40.1, intra_std_bps=28.4, daily_mean_std_bps=28.6, ar1_5m=0.787, ar1_intra_5m=0.58, hl_bars=2.89, hl_intra_bars=1.27, abs_gt_50bps_pct=29.1, abs_gt_100bps_pct=3.45, p99_abs_bps=131
+-- beta_in_session
+   beta_5m=0.715, t_5m=88.2, r2_5m=0.667, n_5m=3.89e+03, perp_std_5m_bps=37.6, home_std_5m_bps=42.9, beta_30m=0.856, t_30m=163, r2_30m=0.88, n_30m=3.63e+03, perp_std_30m_bps=87.5, home_std_30m_bps=96
+-- mr_k2_in_session
+   n_trades=113, per_day=2.13, pair_mean_bps=49.1, pair_med_bps=43.7, pair_win_pct=91.2, pair_t=11.6, perp_mean_bps=18, perp_win_pct=57.5, perp_t=1.96, hold_med_min=20, forced_pct=17.7, entry_sd_bps_med=23.3
+-- offhours
+   n_days=50, gap_on_perpoff_b=1.12, gap_on_perpoff_t=12, gap_on_perpoff_r2=0.752, gap_std_bps=363, perpoff_std_bps=280, resid_std_bps=184, basis_pre_mean_bps=82.2, basis_pre_std_bps=183, perp_post30_on_perp_prior8h_b=0.305, perp_post30_on_perp_prior8h_t=2.34, perp_post60_on_perp_prior8h_b=0.183, perp_post60_on_perp_prior8h_t=1.21, perp_post30_on_perp_off_b=0.178, perp_post30_on_perp_off_t=1.68, perp_post60_on_perp_off_b=0.0966, perp_post60_on_perp_off_t=0.8, perp_post30_on_basis_pre_b=-0.812, perp_post30_on_basis_pre_t=-6.91, perp_post60_on_basis_pre_b=-0.722, perp_post60_on_basis_pre_t=-4.7, perp_post30b_on_basis_open5_b=-0.0377, perp_post30b_on_basis_open5_t=-0.11, perp_post60b_on_basis_open5_b=0.218, perp_post60b_on_basis_open5_t=0.477, fade5_post30_mean_bps=16, fade5_post30_win_pct=62, basis_open5_std_bps=59.5, home_post30_on_basis_pre_b=0.0311, home_post30_on_basis_pre_t=0.265, home_post60_on_basis_pre_b=0.1, home_post60_on_basis_pre_t=0.655, gap_on_perpUS_b=0.762, gap_on_perpUS_t=2.01, gap_on_perpUS_r2=0.0777, fade_post30_mean_bps=148, fade_post30_win_pct=82, fade_post30_bigHalf_mean_bps=196
+-- tail
+   open_gap_std_bps=341, open_gap_maxabs_bps=1.01e+03, first5m_rev_std_bps=77.2, first5m_rev_maxabs_bps=184, days_first5m_rev_gt100bps=8, basis_firstbar_std_bps=59.7, basis_firstbar_maxabs_bps=197, basis_maxabs_bps=360, basis_gt200bps_bars=3, fx_5m_std_bps=4.86, fx_5m_maxabs_bps=99.6, fx_gt30bps_5m_bars=38
+-- vs_ewy
+   n=50, gap_on_ewyoff_b=0.762, gap_on_ewyoff_t=7.97, gap_on_ewyoff_r2=0.57, gap_on_ewyUS_b=0.791, gap_on_ewyUS_t=3.8, gap_on_ewyUS_r2=0.231, perpoff_on_ewyoff_b=0.639, perpoff_on_ewyoff_t=9.87, perpoff_on_ewyoff_r2=0.67, gap_on_perpoff_resid_b=0.976, gap_on_perpoff_resid_t=6.1
+-- leadlag
+   -6=-0.00828, -5=0.0339, -4=0.000522, -3=0.0102, -2=0.0102, -1=-0.0466, 0=0.817, 1=0.0422, 2=0.0397, 3=0.00764, 4=0.0378, 5=0.0161, 6=0.0153
+
+######## HK0700/700.HK
+-- basis_in_session
+   perp_ret_ar1=0.0874, home_ret_ar1=-0.0768, n_bars=1.1e+03, n_days=17, mean_bps=25.9, std_bps=26.8, intra_std_bps=23.7, daily_mean_std_bps=13.4, ar1_5m=0.71, ar1_intra_5m=0.626, hl_bars=2.02, hl_intra_bars=1.48, abs_gt_50bps_pct=14.5, abs_gt_100bps_pct=1.36, p99_abs_bps=102
+-- beta_in_session
+   beta_5m=0.527, t_5m=21.8, r2_5m=0.308, n_5m=1.07e+03, perp_std_5m_bps=19.3, home_std_5m_bps=20.3, beta_30m=0.81, t_30m=42.5, r2_30m=0.668, n_30m=900, perp_std_30m_bps=45.4, home_std_30m_bps=45.8
+-- mr_k2_in_session
+   n_trades=25, per_day=1.47, pair_mean_bps=34.1, pair_med_bps=33.8, pair_win_pct=80, pair_t=5.81, perp_mean_bps=27.9, perp_win_pct=68, perp_t=2.72, hold_med_min=20, forced_pct=20, entry_sd_bps_med=21.8
+-- offhours
+   n_days=16, gap_on_perpoff_b=0.793, gap_on_perpoff_t=3.61, gap_on_perpoff_r2=0.482, gap_std_bps=125, perpoff_std_bps=109, resid_std_bps=92.5, basis_pre_mean_bps=69.7, basis_pre_std_bps=94.1, perp_post30_on_perp_prior8h_b=-0.691, perp_post30_on_perp_prior8h_t=-1.67, perp_post60_on_perp_prior8h_b=-0.131, perp_post60_on_perp_prior8h_t=-0.251, perp_post30_on_perp_off_b=0.0305, perp_post30_on_perp_off_t=0.12, perp_post60_on_perp_off_b=0.409, perp_post60_on_perp_off_t=1.51, perp_post30_on_basis_pre_b=-0.833, perp_post30_on_basis_pre_t=-4.29, perp_post60_on_basis_pre_b=-0.763, perp_post60_on_basis_pre_t=-2.81, perp_post30b_on_basis_open5_b=-0.656, perp_post30b_on_basis_open5_t=-1.3, perp_post60b_on_basis_open5_b=-0.844, perp_post60b_on_basis_open5_t=-1.18, fade5_post30_mean_bps=20, fade5_post30_win_pct=62.5, basis_open5_std_bps=36.5, home_post30_on_basis_pre_b=0.0281, home_post30_on_basis_pre_t=0.123, home_post60_on_basis_pre_b=0.24, home_post60_on_basis_pre_t=0.914, gap_on_perpUS_b=0.936, gap_on_perpUS_t=3.26, gap_on_perpUS_r2=0.432, fade_post30_mean_bps=69.3, fade_post30_win_pct=81.2, fade_post30_bigHalf_mean_bps=117
+-- tail
+   open_gap_std_bps=125, open_gap_maxabs_bps=216, first5m_rev_std_bps=53.5, first5m_rev_maxabs_bps=115, days_first5m_rev_gt100bps=1, basis_firstbar_std_bps=35.6, basis_firstbar_maxabs_bps=72.1, basis_maxabs_bps=228, basis_gt200bps_bars=1
+-- leadlag
+   -6=-0.0343, -5=-0.0093, -4=0.0227, -3=0.0177, -2=-0.00139, -1=-0.0354, 0=0.555, 1=0.211, 2=0.0332, 3=0.0805, 4=0.0647, 5=0.103, 6=-0.0769
+
+######## TENCENT/700.HK
+-- basis_in_session
+   perp_ret_ar1=0.0486, home_ret_ar1=-0.0746, n_bars=1.1e+03, n_days=17, mean_bps=36.4, std_bps=28.1, intra_std_bps=24.5, daily_mean_std_bps=14.6, ar1_5m=0.695, ar1_intra_5m=0.596, hl_bars=1.91, hl_intra_bars=1.34, abs_gt_50bps_pct=27.6, abs_gt_100bps_pct=2.09, p99_abs_bps=109
+-- beta_in_session
+   beta_5m=0.498, t_5m=18.8, r2_5m=0.249, n_5m=1.07e+03, perp_std_5m_bps=20.2, home_std_5m_bps=20.3, beta_30m=0.83, t_30m=40.1, r2_30m=0.642, n_30m=898, perp_std_30m_bps=47.4, home_std_30m_bps=45.8
+-- mr_k2_in_session
+   n_trades=31, per_day=1.82, pair_mean_bps=36.8, pair_med_bps=41.1, pair_win_pct=90.3, pair_t=10.5, perp_mean_bps=26.7, perp_win_pct=77.4, perp_t=4.39, hold_med_min=15, forced_pct=12.9, entry_sd_bps_med=23.5
+-- offhours
+   n_days=16, gap_on_perpoff_b=0.739, gap_on_perpoff_t=3.25, gap_on_perpoff_r2=0.429, gap_std_bps=125, perpoff_std_bps=110, resid_std_bps=98.4, basis_pre_mean_bps=88.4, basis_pre_std_bps=103, perp_post30_on_perp_prior8h_b=-1.04, perp_post30_on_perp_prior8h_t=-2.62, perp_post60_on_perp_prior8h_b=-0.265, perp_post60_on_perp_prior8h_t=-0.497, perp_post30_on_perp_off_b=-0.0454, perp_post30_on_perp_off_t=-0.161, perp_post60_on_perp_off_b=0.306, perp_post60_on_perp_off_t=1.01, perp_post30_on_basis_pre_b=-0.864, perp_post30_on_basis_pre_t=-4.43, perp_post60_on_basis_pre_b=-0.76, perp_post60_on_basis_pre_t=-2.85, perp_post30b_on_basis_open5_b=-0.76, perp_post30b_on_basis_open5_t=-1.03, perp_post60b_on_basis_open5_b=-1.2, perp_post60b_on_basis_open5_t=-1.18, fade5_post30_mean_bps=11, fade5_post30_win_pct=50, basis_open5_std_bps=27.7, home_post30_on_basis_pre_b=-0.0112, home_post30_on_basis_pre_t=-0.0538, home_post60_on_basis_pre_b=0.217, home_post60_on_basis_pre_t=0.903, gap_on_perpUS_b=0.648, gap_on_perpUS_t=2.41, gap_on_perpUS_r2=0.293, fade_post30_mean_bps=66.4, fade_post30_win_pct=68.8, fade_post30_bigHalf_mean_bps=119
+-- tail
+   open_gap_std_bps=125, open_gap_maxabs_bps=216, first5m_rev_std_bps=53.7, first5m_rev_maxabs_bps=115, days_first5m_rev_gt100bps=1, basis_firstbar_std_bps=28.5, basis_firstbar_maxabs_bps=86.1, basis_maxabs_bps=268, basis_gt200bps_bars=1, fx_5m_std_bps=0.188, fx_5m_maxabs_bps=2.68, fx_gt30bps_5m_bars=0
+-- leadlag
+   -6=-0.0238, -5=0.00341, -4=0.0111, -3=0.022, -2=0.0249, -1=-0.0108, 0=0.499, 1=0.189, 2=0.0723, 3=0.081, 4=0.0628, 5=0.0737, 6=-0.0728
+
+######## HK1810/1810.HK
+-- basis_in_session
+   perp_ret_ar1=-0.0713, home_ret_ar1=-0.112, n_bars=1.1e+03, n_days=17, mean_bps=14.5, std_bps=47.6, intra_std_bps=41.4, daily_mean_std_bps=24.2, ar1_5m=0.741, ar1_intra_5m=0.659, hl_bars=2.31, hl_intra_bars=1.66, abs_gt_50bps_pct=20, abs_gt_100bps_pct=3.9, p99_abs_bps=181
+-- beta_in_session
+   beta_5m=0.621, t_5m=21.4, r2_5m=0.301, n_5m=1.07e+03, perp_std_5m_bps=33.3, home_std_5m_bps=29.4, beta_30m=0.828, t_30m=35.7, r2_30m=0.586, n_30m=899, perp_std_30m_bps=65.8, home_std_30m_bps=60.9
+-- mr_k2_in_session
+   n_trades=27, per_day=1.59, pair_mean_bps=64.5, pair_med_bps=37.9, pair_win_pct=96.3, pair_t=4.7, perp_mean_bps=55.6, perp_win_pct=92.6, perp_t=5.12, hold_med_min=15, forced_pct=25.9, entry_sd_bps_med=35.9
+-- offhours
+   n_days=16, gap_on_perpoff_b=1.29, gap_on_perpoff_t=3.47, gap_on_perpoff_r2=0.463, gap_std_bps=278, perpoff_std_bps=146, resid_std_bps=208, basis_pre_mean_bps=69, basis_pre_std_bps=211, perp_post30_on_perp_prior8h_b=0.701, perp_post30_on_perp_prior8h_t=1.51, perp_post60_on_perp_prior8h_b=0.864, perp_post60_on_perp_prior8h_t=1.77, perp_post30_on_perp_off_b=0.233, perp_post30_on_perp_off_t=0.555, perp_post60_on_perp_off_b=0.394, perp_post60_on_perp_off_t=0.888, perp_post30_on_basis_pre_b=-0.878, perp_post30_on_basis_pre_t=-4.95, perp_post60_on_basis_pre_b=-0.953, perp_post60_on_basis_pre_t=-5.07, perp_post30b_on_basis_open5_b=-0.625, perp_post30b_on_basis_open5_t=-1.76, perp_post60b_on_basis_open5_b=-0.734, perp_post60b_on_basis_open5_t=-1.94, fade5_post30_mean_bps=52.4, fade5_post30_win_pct=62.5, basis_open5_std_bps=103, home_post30_on_basis_pre_b=-0.0781, home_post30_on_basis_pre_t=-0.428, home_post60_on_basis_pre_b=-0.0558, home_post60_on_basis_pre_t=-0.264, gap_on_perpUS_b=1.39, gap_on_perpUS_t=2.08, gap_on_perpUS_r2=0.236, fade_post30_mean_bps=170, fade_post30_win_pct=81.2, fade_post30_bigHalf_mean_bps=277
+-- tail
+   open_gap_std_bps=278, open_gap_maxabs_bps=826, first5m_rev_std_bps=80, first5m_rev_maxabs_bps=158, days_first5m_rev_gt100bps=4, basis_firstbar_std_bps=128, basis_firstbar_maxabs_bps=378, basis_maxabs_bps=378, basis_gt200bps_bars=8
+-- leadlag
+   -6=-0.0701, -5=-0.0206, -4=0.0214, -3=-0.0258, -2=0.0876, -1=-0.0374, 0=0.549, 1=0.0901, 2=0.0477, 3=-0.0225, 4=0.0196, 5=0.0147, 6=0.00925
