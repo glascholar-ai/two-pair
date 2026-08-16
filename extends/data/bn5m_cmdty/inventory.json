@@ -1,0 +1,66 @@
+[
+ {
+  "symbol": "XAUUSDT",
+  "underlyingType": "COMMODITY",
+  "status": "TRADING",
+  "onboardDate": 1765440300000,
+  "quoteVolume24h": 1121973774.88,
+  "lastPrice": 4386.53
+ },
+ {
+  "symbol": "XAGUSDT",
+  "underlyingType": "COMMODITY",
+  "status": "TRADING",
+  "onboardDate": 1767780000000,
+  "quoteVolume24h": 528269135.4794,
+  "lastPrice": 64.95
+ },
+ {
+  "symbol": "XPTUSDT",
+  "underlyingType": "COMMODITY",
+  "status": "TRADING",
+  "onboardDate": 1769767200000,
+  "quoteVolume24h": 5053797.4035,
+  "lastPrice": 1750.79
+ },
+ {
+  "symbol": "XPDUSDT",
+  "underlyingType": "COMMODITY",
+  "status": "TRADING",
+  "onboardDate": 1769768100000,
+  "quoteVolume24h": 3600082.703,
+  "lastPrice": 1324.3
+ },
+ {
+  "symbol": "COPPERUSDT",
+  "underlyingType": "COMMODITY",
+  "status": "TRADING",
+  "onboardDate": 1772787600000,
+  "quoteVolume24h": 12889255.8982,
+  "lastPrice": 6.766
+ },
+ {
+  "symbol": "CLUSDT",
+  "underlyingType": "COMMODITY",
+  "status": "TRADING",
+  "onboardDate": 1775034000000,
+  "quoteVolume24h": 441457866.9019,
+  "lastPrice": 81.7
+ },
+ {
+  "symbol": "BZUSDT",
+  "underlyingType": "COMMODITY",
+  "status": "TRADING",
+  "onboardDate": 1775034600000,
+  "quoteVolume24h": 208352668.9865,
+  "lastPrice": 86.69
+ },
+ {
+  "symbol": "NATGASUSDT",
+  "underlyingType": "COMMODITY",
+  "status": "TRADING",
+  "onboardDate": 1775035200000,
+  "quoteVolume24h": 15923041.315,
+  "lastPrice": 2.793
+ }
+]
