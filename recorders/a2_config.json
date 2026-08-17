@@ -1,0 +1,19 @@
+{
+  "output_root": "data/recordings/a2",
+  "binance_symbols": [
+    "ASMLUSDT", "NVOUSDT",
+    "HK0700USDT", "TENCENTUSDT", "HK1810USDT"
+  ],
+  "ib": {
+    "host": "127.0.0.1",
+    "port": 4002,
+    "client_id": 17,
+    "contracts": [
+      {"symbol": "ASML", "sec_type": "STK", "exchange": "AEB", "currency": "EUR"},
+      {"symbol": "700", "sec_type": "STK", "exchange": "SEHK", "currency": "HKD"},
+      {"symbol": "1810", "sec_type": "STK", "exchange": "SEHK", "currency": "HKD"},
+      {"symbol": "EUR", "sec_type": "CASH", "exchange": "IDEALPRO", "currency": "USD"},
+      {"symbol": "USD", "sec_type": "CASH", "exchange": "IDEALPRO", "currency": "HKD"}
+    ]
+  }
+}

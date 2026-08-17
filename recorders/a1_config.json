@@ -1,0 +1,12 @@
+{
+  "universe": "auto",
+  "exclude": [
+    "SKHYNIXUSDT", "SKHYUSDT",
+    "EWYUSDT", "SAMSUNGUSDT",
+    "MUUSDT", "DRAMUSDT",
+    "ASMLUSDT", "NVOUSDT",
+    "HK0700USDT", "TENCENTUSDT", "HK1810USDT"
+  ],
+  "output_root": "data/recordings/a1",
+  "depth_stream": "depth20@500ms"
+}

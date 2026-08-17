@@ -71,6 +71,25 @@ research/              前期调研存档（币安/HL 股票 perp funding 分析
 journal 仅补充两个信号空间标量(当日已实现亏损、止损再武装锁存)。
 任何时刻 kill 进程,重启即恢复;孤腿/数量漂移/外部手动平仓均自动处理。
 
+## 数据记录器（recorders/，A1/A2 试点前置）
+
+与交易系统完全独立的只读采集进程(无 API key,可随时 kill/重启),
+存储为 zstd parquet 列式分片(`<root>/<日期>/<流>/part-*.parquet`,
+内存缓冲 5 分钟或 2 万行落盘一次):
+
+- `a1_orderbook.py` — 死区反转试点的数据:全部股票 perp(自动取
+  exchangeInfo,剔除我们交易的 symbol)的 bookTicker + aggTrade +
+  depth20@500ms,只在 A1 窗口(工作日 00–08 UTC + 整个周末)录制。
+  用途:验证 k≥4σ 远端挂单的成交率假设。**注意:depth 流数据量大,
+  服务器需先扩盘(~50GB)。**
+- `a2_homeline.py` — ADR/母线滞后试点的数据:ASML/NVO/HK 三线的
+  perp bookTicker+aggTrade 全天候录制;`--with-ib` 再加 IBKR 母线
+  tick(ASML.AEB、700/1810.SEHK、EURUSD/USDHKD),需 IB gateway,
+  未装 gateway 前可先跑 Binance-only。ib_insync 仅服务器侧安装。
+
+配置 `recorders/a?_config.json`;部署 `deploy/deploy_recorders.sh`
+(systemd recorder-a1/recorder-a2,Nice=10 不与交易服务抢资源)。
+
 ## 下一步
 
 1. 生产环境 + 极小名义(如单腿 100 USDT)跑 2~4 周,积累样本外记录与时段标签

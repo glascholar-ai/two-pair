@@ -3,5 +3,10 @@
 numpy>=1.24,<3
 pandas>=2.0,<3
 
+# Data recorders (recorders/): WS capture + columnar storage.
+# ib_insync is NOT listed: optional, server-side only (A2 --with-ib).
+websockets>=12,<16
+pyarrow>=15,<22
+
 # Development / testing.
 pytest>=8,<9
