@@ -42,6 +42,9 @@ class Config:
     mtm_stop_pct: float = 2.5           # 0 disables
     z_stop: float = 0.0                 # same-direction |z| stop; 0 disables
     mtm_take_profit_pct: float = 0.0    # close when MTM >= this; 0 disables
+    trail_arm_pct: float = 0.0          # trailing TP: arm once MTM peak >=
+    trail_gap_pct: float = 0.0          # ...then close when MTM falls this
+                                        # far below the peak; both 0 = off
     bar_seconds: int = 300
 
     # Risk parameters.
@@ -103,6 +106,11 @@ class Config:
             raise ValueError("z_out must be < z_in")
         if self.z_stop and self.z_stop <= self.z_in:
             raise ValueError("z_stop must exceed z_in (or be 0)")
+        if (self.trail_arm_pct > 0) != (self.trail_gap_pct > 0):
+            raise ValueError("trail_arm_pct and trail_gap_pct must be set "
+                             "together (or both 0)")
+        if self.trail_gap_pct > 0 and self.trail_gap_pct >= self.trail_arm_pct:
+            raise ValueError("trail_gap_pct must be below trail_arm_pct")
         if self.win_mu <= 0 or self.win_sd <= 0:
             raise ValueError("windows must be positive")
 

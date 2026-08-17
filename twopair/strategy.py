@@ -35,6 +35,7 @@ class CloseReason(enum.Enum):
     TIMEOUT = "timeout"
     STOP = "stop"
     TAKE_PROFIT = "tp"
+    TRAIL = "trail"
 
 
 @dataclasses.dataclass
@@ -214,15 +215,20 @@ class Strategy:
                     and pos.mtm_pct <= -cfg.mtm_stop_pct) or z_stop_hit
         tp_hit = (cfg.mtm_take_profit_pct > 0
                   and pos.mtm_pct >= cfg.mtm_take_profit_pct)
+        trail_hit = (cfg.trail_arm_pct > 0
+                     and pos.max_mtm_pct >= cfg.trail_arm_pct
+                     and pos.mtm_pct <= pos.max_mtm_pct - cfg.trail_gap_pct)
         timed_out = pos.held_hours(sig.ts) >= cfg.max_hold_hours
         converged = abs_z < cfg.z_out
-        if not (converged or timed_out or stop_hit or tp_hit):
+        if not (converged or timed_out or stop_hit or tp_hit or trail_hit):
             return Decision(Action.NONE, z_alert=alert)
 
         if converged:
             reason = CloseReason.CONVERGED
         elif tp_hit:
             reason = CloseReason.TAKE_PROFIT
+        elif trail_hit:
+            reason = CloseReason.TRAIL
         elif stop_hit:
             reason = CloseReason.STOP
             self._need_rearm = True

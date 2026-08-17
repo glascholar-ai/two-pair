@@ -152,3 +152,59 @@ class TestZStop:
         strat = Strategy(cfg(mtm_stop_pct=0.0))
         strat.on_bar(sig(0, 2.5), 0, 0)
         assert strat.on_bar(sig(5, 6.0), 0, 0).action == Action.NONE
+
+
+class TestTrailingTakeProfit:
+    def test_disabled_by_default(self) -> None:
+        strat = Strategy(cfg(mtm_stop_pct=0.0))
+        strat.on_bar(sig(0, -2.5, lr=0.0), 0, 0)
+        strat.on_bar(sig(5, -1.0, lr=0.03), dlr=0.03, funding_long_ratio_pct=0)
+        d = strat.on_bar(sig(10, -1.0, lr=0.005), dlr=-0.025,
+                         funding_long_ratio_pct=0)
+        assert d.action == Action.NONE      # gave back 2.5% but trail off
+
+    def test_arms_then_locks_on_giveback(self) -> None:
+        strat = Strategy(cfg(mtm_stop_pct=0.0, trail_arm_pct=2.0,
+                             trail_gap_pct=1.0))
+        strat.on_bar(sig(0, -2.5, lr=0.0), 0, 0)
+        strat.on_bar(sig(5, -1.0, lr=0.025), dlr=0.025,
+                     funding_long_ratio_pct=0)   # peak +2.5% (armed)
+        d = strat.on_bar(sig(10, -1.1, lr=0.016), dlr=-0.009,
+                         funding_long_ratio_pct=0)  # +1.6%, gave back 0.9
+        assert d.action == Action.NONE
+        d = strat.on_bar(sig(15, -1.2, lr=0.014), dlr=-0.002,
+                         funding_long_ratio_pct=0)  # +1.4%, gave back 1.1
+        assert d.action == Action.CLOSE
+        assert d.trade is not None
+        assert d.trade.reason == CloseReason.TRAIL
+        assert d.trade.pnl_pct == pytest.approx(1.4, abs=0.05)
+
+    def test_no_lock_below_arm_level(self) -> None:
+        strat = Strategy(cfg(mtm_stop_pct=0.0, trail_arm_pct=2.0,
+                             trail_gap_pct=1.0))
+        strat.on_bar(sig(0, -2.5, lr=0.0), 0, 0)
+        strat.on_bar(sig(5, -1.5, lr=0.015), dlr=0.015,
+                     funding_long_ratio_pct=0)   # peak +1.5% (below arm)
+        d = strat.on_bar(sig(10, -1.8, lr=0.002), dlr=-0.013,
+                         funding_long_ratio_pct=0)  # +0.2%, big giveback
+        assert d.action == Action.NONE      # never armed
+
+    def test_no_rearm_after_trail(self) -> None:
+        strat = Strategy(cfg(mtm_stop_pct=0.0, trail_arm_pct=2.0,
+                             trail_gap_pct=1.0))
+        strat.on_bar(sig(0, -3.5, lr=0.0), 0, 0)
+        strat.on_bar(sig(5, -2.6, lr=0.025), dlr=0.025,
+                     funding_long_ratio_pct=0)
+        d = strat.on_bar(sig(10, -2.7, lr=0.012), dlr=-0.013,
+                         funding_long_ratio_pct=0)
+        assert d.action == Action.CLOSE and d.trade is not None
+        assert d.trade.reason == CloseReason.TRAIL
+        # signal still valid (|z|>2): fresh entry allowed next bar
+        d2 = strat.on_bar(sig(15, -2.6, lr=0.012), 0, 0)
+        assert d2.action == Action.OPEN
+
+    def test_config_validation(self) -> None:
+        with pytest.raises(ValueError):
+            cfg(trail_arm_pct=2.0)               # gap missing
+        with pytest.raises(ValueError):
+            cfg(trail_arm_pct=1.0, trail_gap_pct=1.5)  # gap >= arm
