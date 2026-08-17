@@ -54,8 +54,10 @@ StandardError=inherit
 [Install]
 WantedBy=multi-user.target
 EOF
+    # Manual-start policy: recorders are NOT enabled at boot (user decision
+    # 2026-08-17); deploy restarts a running one but never enables it.
     ssh "$REMOTE" "sudo systemctl daemon-reload \
-        && sudo systemctl enable --now $name.service \
+        && sudo systemctl restart $name.service \
         && sleep 2 && systemctl is-active $name.service"
 }
 
