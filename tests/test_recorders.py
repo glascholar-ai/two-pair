@@ -11,11 +11,11 @@ import pytest
 from recorders.a1_orderbook import build_streams, load_config, resolve_universe
 from recorders.a2_homeline import (build_binance_streams, ib_contract_label,
                                    load_config as load_a2_config)
-from recorders.common import (AGG_TRADE_SCHEMA, BOOK_TICKER_SCHEMA,
-                              DEPTH_SCHEMA, ParquetBufferWriter,
-                              a1_window_active, a1_window_end, chunk_streams,
-                              next_a1_window_start, parse_agg_trade,
-                              parse_book_ticker, parse_depth, route_kind)
+from recorders.common import (BOOK_TICKER_SCHEMA, DEPTH_SCHEMA, TRADE_SCHEMA,
+                              ParquetBufferWriter, a1_window_active,
+                              a1_window_end, chunk_streams,
+                              next_a1_window_start, parse_book_ticker,
+                              parse_depth, parse_trade, route_kind)
 
 UTC = dt.timezone.utc
 
@@ -72,11 +72,11 @@ class TestParsers:
         assert row == {"t": 1000, "s": "ASMLUSDT", "u": 7, "bp": 812.5,
                        "bq": 3.2, "ap": 812.9, "aq": 1.1, "E": 5, "T": 4}
 
-    def test_agg_trade(self) -> None:
-        row = parse_agg_trade(1000, {
-            "s": "MUUSDT", "a": 42, "p": "111.5", "q": "2", "m": True,
-            "T": 999})
-        assert row == {"t": 1000, "s": "MUUSDT", "a": 42, "p": 111.5,
+    def test_trade(self) -> None:
+        row = parse_trade(1000, {
+            "s": "MUUSDT", "t": 42, "p": "111.5", "q": "2", "m": True,
+            "T": 999, "X": "MARKET", "st": 1})
+        assert row == {"t": 1000, "s": "MUUSDT", "id": 42, "p": 111.5,
                        "q": 2.0, "m": True, "T": 999}
 
     def test_depth(self) -> None:
@@ -89,8 +89,10 @@ class TestParsers:
 
     def test_route_kind(self) -> None:
         book = route_kind("bookTicker")
+        trade = route_kind("trade")
         depth = route_kind("depth20")
         assert book is not None and book[0] == "bookticker"
+        assert trade is not None and trade[0] == "trade"
         assert depth is not None and depth[0] == "depth"
         assert route_kind("markPrice") is None
 
@@ -124,10 +126,10 @@ class TestParquetBufferWriter:
         assert len(list(tmp_path.rglob("*.parquet"))) == 1
 
     def test_close_flushes_remainder(self, tmp_path: pathlib.Path) -> None:
-        writer = ParquetBufferWriter(tmp_path, "aggtrade", AGG_TRADE_SCHEMA,
+        writer = ParquetBufferWriter(tmp_path, "trade", TRADE_SCHEMA,
                                      clock=FakeClock(ts(3, 2)))
-        writer.append(parse_agg_trade(5, {"s": "X", "a": 1, "p": "1",
-                                          "q": "1", "m": False, "T": 2}))
+        writer.append(parse_trade(5, {"s": "X", "t": 1, "p": "1",
+                                      "q": "1", "m": False, "T": 2}))
         writer.close()
         parts = list(tmp_path.rglob("*.parquet"))
         assert len(parts) == 1 and pq.read_table(parts[0]).num_rows == 1
@@ -183,7 +185,7 @@ class TestA1Config:
 
     def test_build_streams(self) -> None:
         streams = build_streams(["AUSDT"], "depth20@500ms")
-        assert streams == ["ausdt@bookTicker", "ausdt@aggTrade",
+        assert streams == ["ausdt@bookTicker", "ausdt@trade",
                            "ausdt@depth20@500ms"]
 
     def test_repo_config_excludes_all_traded_symbols(self) -> None:
@@ -209,7 +211,7 @@ class TestA2Config:
         assert cfg["ib"]["host"] == "127.0.0.1"
         assert cfg["ib"]["contracts"] == []
         assert build_binance_streams(cfg["binance_symbols"]) == [
-            "asmlusdt@bookTicker", "asmlusdt@aggTrade"]
+            "asmlusdt@bookTicker", "asmlusdt@trade"]
 
     def test_repo_config_contracts(self) -> None:
         cfg = load_a2_config("recorders/a2_config.json")

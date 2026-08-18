@@ -37,8 +37,11 @@ BOOK_TICKER_SCHEMA = pa.schema([
     ("ap", pa.float64()), ("aq", pa.float64()),
     ("E", pa.int64()), ("T", pa.int64()),
 ])
-AGG_TRADE_SCHEMA = pa.schema([
-    ("t", pa.int64()), ("s", pa.string()), ("a", pa.int64()),
+# @trade, not @aggTrade: the fapi WS pushes no data on @aggTrade for any
+# symbol (verified 2026-08-18 against btcusdt; @trade works), so raw trades
+# are recorded instead — finer-grained anyway for fill-rate validation.
+TRADE_SCHEMA = pa.schema([
+    ("t", pa.int64()), ("s", pa.string()), ("id", pa.int64()),
     ("p", pa.float64()), ("q", pa.float64()), ("m", pa.bool_()),
     ("T", pa.int64()),
 ])
@@ -128,9 +131,9 @@ def parse_book_ticker(t_ms: int, d: dict) -> Row:
             "E": int(d.get("E", 0)), "T": int(d.get("T", 0))}
 
 
-def parse_agg_trade(t_ms: int, d: dict) -> Row:
-    """Binance futures aggTrade payload -> typed row."""
-    return {"t": t_ms, "s": d["s"], "a": int(d["a"]),
+def parse_trade(t_ms: int, d: dict) -> Row:
+    """Binance futures trade payload -> typed row."""
+    return {"t": t_ms, "s": d["s"], "id": int(d["t"]),
             "p": float(d["p"]), "q": float(d["q"]), "m": bool(d["m"]),
             "T": int(d["T"])}
 
@@ -151,8 +154,8 @@ def route_kind(kind: str) -> Optional[Tuple[str, Parser]]:
     """Maps a stream-type suffix (after '@') to (writer name, parser)."""
     if kind == "bookTicker":
         return "bookticker", parse_book_ticker
-    if kind == "aggTrade":
-        return "aggtrade", parse_agg_trade
+    if kind == "trade":
+        return "trade", parse_trade
     if kind.startswith("depth"):
         return "depth", parse_depth
     return None
@@ -165,8 +168,8 @@ def make_binance_writers(root: pathlib.Path, include_depth: bool,
     writers = {
         "bookticker": ParquetBufferWriter(root, "bookticker",
                                           BOOK_TICKER_SCHEMA, clock=clock),
-        "aggtrade": ParquetBufferWriter(root, "aggtrade", AGG_TRADE_SCHEMA,
-                                        clock=clock),
+        "trade": ParquetBufferWriter(root, "trade", TRADE_SCHEMA,
+                                     clock=clock),
     }
     if include_depth:
         writers["depth"] = ParquetBufferWriter(root, "depth", DEPTH_SCHEMA,

@@ -8,7 +8,7 @@ had only 17 days of history and need another month of accumulation before
 the re-audit; NVO is a candidate pending CPH data permission.
 
 Two independent capture tasks:
-  - Binance perp bookTicker + aggTrade for the configured symbols, 24/7
+  - Binance perp bookTicker + trade for the configured symbols, 24/7
     (public WS, no API key).
   - IBKR home-line market data via ib_insync (``--with-ib``): requires a
     running IB gateway; ticks only arrive while the home market quotes, so
@@ -52,11 +52,11 @@ def load_config(path: str) -> dict:
 
 
 def build_binance_streams(symbols: List[str]) -> List[str]:
-    """bookTicker + aggTrade stream names (no depth: A2 trades taker/BBO)."""
+    """bookTicker + trade stream names (no depth: A2 trades taker/BBO)."""
     out: List[str] = []
     for sym in symbols:
         low = sym.lower()
-        out += [f"{low}@bookTicker", f"{low}@aggTrade"]
+        out += [f"{low}@bookTicker", f"{low}@trade"]
     return out
 
 

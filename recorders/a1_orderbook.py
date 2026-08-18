@@ -2,7 +2,7 @@
 """A1 recorder: Binance stock-perp books/trades in dead zone + weekends.
 
 Purpose: validate the fill-rate assumption of far (k>=4 sigma) passive
-quotes before piloting the off-hours reversal strategy — aggTrades tell
+quotes before piloting the off-hours reversal strategy — trades tell
 whether prints cross a hypothetical resting level; depth20 snapshots bound
 the queue ahead; bookTicker feeds the EWMA/sigma baseline.
 
@@ -70,7 +70,7 @@ def build_streams(symbols: List[str], depth_stream: str) -> List[str]:
     out: List[str] = []
     for sym in symbols:
         low = sym.lower()
-        out += [f"{low}@bookTicker", f"{low}@aggTrade",
+        out += [f"{low}@bookTicker", f"{low}@trade",
                 f"{low}@{depth_stream}"]
     return out
 
