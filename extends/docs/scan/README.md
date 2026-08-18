@@ -39,7 +39,10 @@ xyz（股票/商品/FX），参考价用本机 IBKR（只读）历史数据。
 - **开盘 snap / 08:00、13:30 机制跳变**：不存在。夜间 perp 走势被盘前全额确认（斜率 1.03、
   r² 0.92），KRX 开盘跳空对 perp 隔夜 β 1.02–1.06、r² 0.91–0.93，两所在四个边界均无系统性跳变。
 - **Binance vs HL 同股价差搬砖**：残差 std 3–5 bps、半衰期 ≤2 根、往返费 9.8 bps；韩股腿噪声
-  3 倍但事故风险最高。
+  3 倍但事故风险最高。**韩股腿成交级复核（08-18，`hl_kr_spread_mr.md`）：回归现象真
+  （>20 bps 偏离 100% 于 24h 内收敛、中位 1–1.5h），但偏离经常在给 BN 韩股 4h 一期、
+  单期可达 50 bps 的资金费定价——裸 fade 为负；资金费过滤 + BN maker 后仅 SKHX 一格
+  显著（+10.4 bps/笔、t 3.9、0.8 笔/日），容量 $2–5/日，独立策略否决、留观察项。**
 - **商品 perp 周末反向**：周末 perp 移动 → CME 重开缺口 β 黄金 0.91 / 白银 1.13 / WTI 0.60，
   期货首 30 分钟还朝 perp 方向补——perp 是周末信息载体，不可反向。
 - **24h 财报后漂移**：前 30 分钟完成 AH 位移 79%，DEAD/OPEN/RTH 回归 \|t\|<1.5。
@@ -75,5 +78,6 @@ xyz（股票/商品/FX），参考价用本机 IBKR（只读）历史数据。
 | `adr_homeline_basis.md` | ADR/ETF perp vs 母市场本线（IBKR）领先滞后、MR、KRX/HK 反向 |
 | `commodity_fx_perps.md` | 商品/FX perp 清单、CME 休市窗口、期货 basis、跨所 |
 | `binance_vs_hl.md` | 两所指数/标记/资金费机制 + 同股价差/资金费差/领先滞后 |
+| `hl_kr_spread_mr.md` | 韩股腿跨所价差均值回归成交级回测（08-18 追加；BN 韩股资金费实为 4h 一期） |
 | `events_calendar.md` | 假日、宏观、财报、opex、周末结构 |
 | 脚本 | `scan_offhours_*.py`、`scan_basis_*.py`、`scan_adr_*.py`、`scan_cmdty_*.py`、`scan_hl_*.py`、`scan_events_*.py`、`session_anomaly_scan.py` |
