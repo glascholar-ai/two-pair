@@ -48,6 +48,11 @@ FAT_EXIT_APR = 8.0               # trailing-7d APR below which fat position exit
 FAT_STOP_BPS = -100.0            # basis blowout stop for fat entries (smoothed)
 FAT_KINDS = {"EQUITY", "KR_EQUITY", "JP"}   # stock legs cheap enough for
 # funding-first entries; HK excluded (26bp friction + flaky funding regimes)
+# In production the fat-mode universe is a HUMAN-CURATED whitelist (funding
+# persistence record, borrow/access sanity) — FAT_KINDS+FAT_APR is its backtest
+# proxy. FAT_PREM_FLOOR: entry premium must be >= this multiple of the
+# round-trip cost, so the basis leg alone pays for the trip.
+FAT_PREM_FLOOR = 1.0
 B_ENTRY_APR = 15.0               # type B trailing spread entry
 B_EXIT_APR = 5.0
 BORROW_APR = 1.0                 # % p.a. charged on short-stock legs
@@ -338,8 +343,9 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
             mode = ""
             if sig >= f["entry_thr"] and apr_tr >= MIN_TRAIL_APR:
                 mode = "prem"
-            elif f["fat"] and apr_tr >= FAT_ENTRY_APR and sig > -f["cost"]:
-                mode = "fat"     # funding-first: enter near flat basis
+            elif f["fat"] and apr_tr >= FAT_ENTRY_APR \
+                    and sig >= FAT_PREM_FLOOR * f["cost"]:
+                mode = "fat"     # funding-first: basis covers the round trip
             if mode:
                 j = i + FILL_LAG_BARS
                 slot = float(df["slot_usd"].iloc[j]) if np.isfinite(
