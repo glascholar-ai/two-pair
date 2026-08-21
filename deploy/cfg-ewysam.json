@@ -15,5 +15,5 @@
     "z_stop": 4.0,
     "mtm_stop_pct": 0.0,
     "max_hold_hours": 336.0,
-    "leg_notional_usdt": 200000.0
+    "leg_notional_usdt": 50000.0
 }
