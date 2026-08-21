@@ -46,7 +46,8 @@ B_ENTRY_APR = 15.0               # type B trailing spread entry
 B_EXIT_APR = 5.0
 BORROW_APR = 1.0                 # % p.a. charged on short-stock legs
 FILL_LAG_BARS = 1
-SMOOTH_BARS = 5
+SMOOTH_BARS = 12                 # 1h median on the 5m decision grid
+COOLDOWN_MS = 2 * 3_600_000      # re-entry cooldown per name after exit
 # Round-trip friction (both directions, one-leg notional bps): stock leg by
 # market + perp leg by venue (BN taker 4x2; HL xyz growth 0.9x2, para 4.5x2).
 STOCK_RT = {"EQUITY": 6.0, "HK_EQUITY": 26.0, "KR_EQUITY": 24.0, "JP": 6.0}
@@ -130,7 +131,8 @@ def load_perp_px(venue: str, bn_symbol: str, hl_coin: str,
             return None
         df = pd.read_parquet(p)
         return pd.DataFrame({"ts": col(df, "ts").astype("int64") * 1000,
-                             "px": col(df, "px").astype(float)})
+                             "px": col(df, "px").astype(float),
+                             "n": 999})
     stem = str(hl_coin).replace(":", "_")
     frames: List[pd.DataFrame] = []
     for iv in ("15m", "5m"):
@@ -140,12 +142,14 @@ def load_perp_px(venue: str, bn_symbol: str, hl_coin: str,
             end_of_bar = {"15m": 900_000, "5m": 300_000}[iv]
             frames.append(pd.DataFrame(
                 {"ts": col(d, "ts").astype("int64") + end_of_bar,
-                 "px": col(d, "c").astype(float), "pri": 0 if iv == "5m" else 1}))
+                 "px": col(d, "c").astype(float),
+                 "n": col(d, "trades").astype("int64"),
+                 "pri": 0 if iv == "5m" else 1}))
     if not frames:
         return None
     allf = pd.concat(frames).sort_values(["ts", "pri"])
     allf = allf.drop_duplicates("ts", keep="first")
-    return cast(pd.DataFrame, allf[["ts", "px"]].reset_index(drop=True))
+    return cast(pd.DataFrame, allf[["ts", "px", "n"]].reset_index(drop=True))
 
 
 def load_stock(ticker: str, ccy: str) -> Optional[pd.DataFrame]:
@@ -194,21 +198,40 @@ def build_a_frame(r: Dict[str, Any], ib_ok: Dict[str, Dict[str, Any]],
                         str(r.get("hl_coin") or ""), str(r.get("dex") or ""))
     if stock is None or perp is None or len(stock) < 500 or len(perp) < 500:
         return None
-    tol = 120_000 if r["venue"] == "BN" else 1_200_000
+    # freshness: perp quote must be from the same 5m window (HL 15m-era bars
+    # simply yield fewer decision points) and, for HL, from a bar with real
+    # trading — a stale thin-name candle close is not a tradeable price.
+    tol = 120_000 if r["venue"] == "BN" else 300_000
     m = pd.merge_asof(stock.sort_values("ts"),
                       perp.sort_values("ts").rename(columns={"px": "perp"}),
                       on="ts", tolerance=tol, direction="backward")
     m = cast(pd.DataFrame, m.dropna(subset=["perp"]))
+    m = cast(pd.DataFrame, m[col(m, "n") >= 3])
     m = cast(pd.DataFrame, m[(col(m, "ts") >= t0) & (col(m, "ts") <= t1)])
     if len(m) < 500:
         return None
+    # 5m decision grid: last obs per bucket kills 1m-level microstructure churn
+    m["ts"] = (col(m, "ts") // 300_000) * 300_000 + 300_000
+    m = m.drop_duplicates("ts", keep="last")
     m["prem_raw"] = np.log(col(m, "perp") / col(m, "px")) * 1e4
-    m["prem_bps"] = col(m, "prem_raw").rolling(
-        SMOOTH_BARS, min_periods=3).median()
+    # session-filter FIRST, then smooth within contiguous blocks only: a 1h
+    # median that spans the pre-market or the overnight gap manufactures
+    # phantom open dislocations. Full window required -> no signals in the
+    # first hour of each session block.
     ok = in_session(col(m, "ts").to_numpy(dtype="int64"), kind)
-    m = cast(pd.DataFrame, m[ok])
-    if len(m) < 300:
+    m = cast(pd.DataFrame, m[ok]).copy()
+    if len(m) < 200:
         return None
+    block = (col(m, "ts").diff() > 900_000).cumsum()
+    m["prem_bps"] = col(m, "prem_raw").groupby(block).transform(
+        lambda s: s.rolling(SMOOTH_BARS, min_periods=SMOOTH_BARS).median())
+    # effective half-spread of the perp leg, estimated from 5m close-to-close
+    # moves (thin xyz names trade inside a wide book; last-price bounce is not
+    # capturable). Charged as 2x per round trip on top of fee cost.
+    dperp = np.abs(np.diff(np.log(col(m, "perp").to_numpy(dtype=float)))) * 1e4
+    half_spread = max(float(np.median(dperp[dperp > 0])) if len(dperp) else 1.0,
+                      1.0)
+    m.attrs["half_spread"] = half_spread
     oi = None if r["venue"] == "HL" else load_oi_series(str(r["bn_symbol"]))
     if oi is not None:
         m = pd.merge_asof(m.sort_values("ts"), oi.sort_values("ts"),
@@ -238,13 +261,12 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
             continue
         dirn = 1 if float(r["apr"]) > 0 else -1     # +1 = short perp/long stock
         venue = "binance" if r["venue"] == "BN" else "hyperliquid"
+        cost = cost_rt_bps(str(df["kind"].iloc[0]), str(r["venue"]),
+                           str(r.get("dex") or ""))
+        cost += 2.0 * float(df.attrs.get("half_spread", 1.0))
         frames[key] = {
-            "r": r, "df": df, "dir": dirn, "venue_db": venue,
-            "cost": cost_rt_bps(str(df["kind"].iloc[0]), str(r["venue"]),
-                                str(r.get("dex") or "")),
-            "entry_thr": max(CUSHION * cost_rt_bps(
-                str(df["kind"].iloc[0]), str(r["venue"]),
-                str(r.get("dex") or "")), MIN_PREM_BPS)}
+            "r": r, "df": df, "dir": dirn, "venue_db": venue, "cost": cost,
+            "entry_thr": max(CUSHION * cost, MIN_PREM_BPS)}
     # merged event grid
     events: List[Tuple[int, str, int]] = []       # (ts, key, row_idx)
     for key, f in frames.items():
@@ -252,6 +274,7 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
         events.extend((int(t), key, i) for i, t in enumerate(ts))
     events.sort()
     open_pos: Dict[str, Dict[str, Any]] = {}
+    cooldown: Dict[str, int] = {}
     stock_used = 0.0
     perp_used = 0.0
     closed: List[Dict[str, Any]] = []
@@ -270,7 +293,7 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
             if sig <= EXIT_BPS and i + FILL_LAG_BARS < len(df):
                 j = i + FILL_LAG_BARS
                 xts = int(df["ts"].iloc[j])
-                xprem = float(df["prem_raw"].iloc[j])
+                xprem = float(df["prem_bps"].iloc[j])
                 fnd = fb.accrue(f["venue_db"], str(f["r"]["ticker"]),
                                 pos["t_in"], xts) * dirn * 1e4
                 hold_d = (xts - pos["t_in"]) / 86_400_000
@@ -288,9 +311,11 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
                     "pnl_usd": round(net / 1e4 * pos["notional"], 0)})
                 stock_used -= pos["notional"]
                 perp_used -= pos["notional"]
+                cooldown[key] = xts + COOLDOWN_MS
                 del open_pos[key]
         else:
-            if sig >= f["entry_thr"] and i + FILL_LAG_BARS < len(df):
+            if sig >= f["entry_thr"] and i + FILL_LAG_BARS < len(df) \
+                    and ts >= cooldown.get(key, 0):
                 apr_tr = fb.trail7_apr(f["venue_db"], str(f["r"]["ticker"]), ts)
                 if dirn * apr_tr < MIN_TRAIL_APR:
                     continue
@@ -304,7 +329,7 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
                     continue
                 open_pos[key] = {
                     "t_in": int(df["ts"].iloc[j]),
-                    "prem_in": float(df["prem_raw"].iloc[j]),
+                    "prem_in": float(df["prem_bps"].iloc[j]),
                     "notional": notional}
                 stock_used += notional
                 perp_used += notional
@@ -319,7 +344,7 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
         f = frames[key]
         df = f["df"]
         xts = int(df["ts"].iloc[-1])
-        xprem = float(df["prem_raw"].iloc[-1])
+        xprem = float(df["prem_bps"].iloc[-1])
         dirn = f["dir"]
         fnd = fb.accrue(f["venue_db"], str(f["r"]["ticker"]),
                         pos["t_in"], xts) * dirn * 1e4
@@ -357,8 +382,14 @@ def run_type_b(cand: List[Dict[str, Any]], fb: FundingBook,
         m = cast(pd.DataFrame, m[(col(m, "ts") >= t0) & (col(m, "ts") <= t1)])
         if len(m) < 200:
             continue
-        m["sprd"] = np.log(col(m, "bn") / col(m, "hl")) * 1e4
+        m["sprd_raw"] = np.log(col(m, "bn") / col(m, "hl")) * 1e4
+        m["sprd"] = col(m, "sprd_raw").rolling(6, min_periods=2).median()
+        m = cast(pd.DataFrame, m.dropna(subset=["sprd"]))
         cost = PERP_RT["BN"] + PERP_RT.get(str(r["dex"]), 9.0)
+        for leg in ("bn", "hl"):
+            dl = np.abs(np.diff(np.log(col(m, leg).to_numpy(dtype=float)))) * 1e4
+            cost += 2.0 * max(float(np.median(dl[dl > 0])) if len(dl) else 1.0,
+                              1.0)
         slot = float(r["slot_kusd"]) * 1e3
         notional = min(slot, CAP_PER_NAME)
         pos: Optional[Dict[str, Any]] = None

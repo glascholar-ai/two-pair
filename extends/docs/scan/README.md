@@ -89,5 +89,6 @@ SKHYNIX 动态净 1653/1203 bps（低/高摩擦）vs 静态持有 1177，超额�
 | `binance_vs_hl.md` | 两所指数/标记/资金费机制 + 同股价差/资金费差/领先滞后 |
 | `hl_kr_spread_mr.md` | 韩股腿跨所价差均值回归成交级回测（08-18 追加；BN 韩股资金费实为 4h 一期） |
 | `dynamic_carry.md` | 动态 cash-and-carry 择时：溢价+funding 联动 vs 静态持有（08-21 追加） |
+| `dyn_carry_backtest.md` | 全域动态 funding 套利组合回测：$10M/30d 净 $176k≈21.5% 年化，保守 12–18%；四轮假象修正记录（08-21 追加） |
 | `events_calendar.md` | 假日、宏观、财报、opex、周末结构 |
 | 脚本 | `scan_offhours_*.py`、`scan_basis_*.py`、`scan_adr_*.py`、`scan_cmdty_*.py`、`scan_hl_*.py`、`scan_events_*.py`、`session_anomaly_scan.py` |

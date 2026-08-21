@@ -1,0 +1,561 @@
+[
+ {
+  "ticker": "CXMT",
+  "status": "skip_cn_equity"
+ },
+ {
+  "ticker": "MINIMAX",
+  "status": "ok",
+  "ccy": "HKD",
+  "resumed": true
+ },
+ {
+  "ticker": "SAMSUNG",
+  "status": "ok",
+  "real": "005930",
+  "exchange": "KRX",
+  "ccy": "KRW",
+  "close_usd": 203.365,
+  "bn_index": 203.69258201
+ },
+ {
+  "ticker": "AVGO",
+  "status": "ok",
+  "real": "AVGO",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 364.03,
+  "bn_index": 367.53647919
+ },
+ {
+  "ticker": "ZHIPU",
+  "status": "ok",
+  "real": "2513",
+  "exchange": "SEHK",
+  "ccy": "HKD",
+  "close_usd": 141.702,
+  "bn_index": 142.21497264
+ },
+ {
+  "ticker": "SHAZ",
+  "status": "ok",
+  "real": "SHAZ",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 60.85,
+  "bn_index": 61.0345774
+ },
+ {
+  "ticker": "CBRS",
+  "status": "ok",
+  "real": "CBRS",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 209.85,
+  "bn_index": 211.20296551
+ },
+ {
+  "ticker": "KIOXIA",
+  "status": "ok",
+  "real": "285A",
+  "exchange": "TSEJ",
+  "ccy": "JPY",
+  "close_usd": 342.127,
+  "bn_index": null
+ },
+ {
+  "ticker": "BE",
+  "status": "ok",
+  "real": "BE",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 204.34,
+  "bn_index": 206.09979825
+ },
+ {
+  "ticker": "LITE",
+  "status": "ok",
+  "real": "LITE",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 879.28,
+  "bn_index": 893.99463272
+ },
+ {
+  "ticker": "INTC",
+  "status": "ok",
+  "real": "INTC",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 92.13,
+  "bn_index": 93.19424799
+ },
+ {
+  "ticker": "NBIS",
+  "status": "ok",
+  "real": "NBIS",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 220.11,
+  "bn_index": 227.29833789
+ },
+ {
+  "ticker": "COIN",
+  "status": "ok",
+  "real": "COIN",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 172.35,
+  "bn_index": 181.08244065
+ },
+ {
+  "ticker": "HOOD",
+  "status": "ok",
+  "real": "HOOD",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 95.1,
+  "bn_index": 98.33378221
+ },
+ {
+  "ticker": "DRAM",
+  "status": "ok",
+  "real": "DRAM",
+  "exchange": "BATS",
+  "ccy": "USD",
+  "close_usd": 57.58,
+  "bn_index": 59.15455543
+ },
+ {
+  "ticker": "HK0700",
+  "status": "no_mapping"
+ },
+ {
+  "ticker": "BB",
+  "status": "price_mismatch",
+  "real": "BB",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 8.24,
+  "bn_index": null
+ },
+ {
+  "ticker": "MSTR",
+  "status": "ok",
+  "real": "MSTR",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 119.09,
+  "bn_index": 119.90373834
+ },
+ {
+  "ticker": "STRC",
+  "status": "ok",
+  "real": "STRC",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 95.25,
+  "bn_index": 95.69848072
+ },
+ {
+  "ticker": "BABA",
+  "status": "ok",
+  "real": "BABA",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 130.53,
+  "bn_index": 125.58220688
+ },
+ {
+  "ticker": "GOOGL",
+  "status": "ok",
+  "real": "GOOGL",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 340.67,
+  "bn_index": 341.69269057
+ },
+ {
+  "ticker": "MRVL",
+  "status": "ok",
+  "real": "MRVL",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 251.01,
+  "bn_index": 254.43723465
+ },
+ {
+  "ticker": "TSM",
+  "status": "ok",
+  "real": "TSM",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 416.0,
+  "bn_index": 421.38240407
+ },
+ {
+  "ticker": "RKLB",
+  "status": "ok",
+  "real": "RKLB",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 72.95,
+  "bn_index": 74.04970982
+ },
+ {
+  "ticker": "CRCL",
+  "status": "ok",
+  "real": "CRCL",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 83.66,
+  "bn_index": 87.19852703
+ },
+ {
+  "ticker": "META",
+  "status": "ok",
+  "real": "META",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 545.83,
+  "bn_index": 548.51925863
+ },
+ {
+  "ticker": "SOXS",
+  "status": "ok",
+  "real": "SOXS",
+  "exchange": "ARCA",
+  "ccy": "USD",
+  "close_usd": 46.25,
+  "bn_index": 45.02710044
+ },
+ {
+  "ticker": "MU",
+  "status": "ok",
+  "real": "MU",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 974.33,
+  "bn_index": 983.28746333
+ },
+ {
+  "ticker": "AXTI",
+  "status": "ok",
+  "real": "AXTI",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 73.12,
+  "bn_index": 75.11483449
+ },
+ {
+  "ticker": "ORCL",
+  "status": "ok",
+  "real": "ORCL",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 142.07,
+  "bn_index": 142.88445712
+ },
+ {
+  "ticker": "AAOI",
+  "status": "ok",
+  "real": "AAOI",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 129.1,
+  "bn_index": 131.37744976
+ },
+ {
+  "ticker": "LLY",
+  "status": "ok",
+  "real": "LLY",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 1244.4,
+  "bn_index": 1248.04817894
+ },
+ {
+  "ticker": "STX",
+  "status": "ok",
+  "real": "STX",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 850.24,
+  "bn_index": 862.57900746
+ },
+ {
+  "ticker": "ARM",
+  "status": "ok",
+  "real": "ARM",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 250.72,
+  "bn_index": 253.4129518
+ },
+ {
+  "ticker": "BX",
+  "status": "ok",
+  "real": "BX",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 141.35,
+  "bn_index": 141.50545001
+ },
+ {
+  "ticker": "NFLX",
+  "status": "ok",
+  "real": "NFLX",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 80.14,
+  "bn_index": 80.00011966
+ },
+ {
+  "ticker": "APP",
+  "status": "ok",
+  "real": "APP",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 308.77,
+  "bn_index": 310.55717354
+ },
+ {
+  "ticker": "QCOM",
+  "status": "ok",
+  "real": "QCOM",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 160.74,
+  "bn_index": 162.14643633
+ },
+ {
+  "ticker": "USAR",
+  "status": "ok",
+  "real": "USAR",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 17.11,
+  "bn_index": 17.41014762
+ },
+ {
+  "ticker": "BNC",
+  "status": "ok",
+  "real": "BNC",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 2.7,
+  "bn_index": 2.7502741
+ },
+ {
+  "ticker": "BRKB",
+  "status": "no_contract",
+  "real": "BRKB"
+ },
+ {
+  "ticker": "IBM",
+  "status": "ok",
+  "real": "IBM",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 233.69,
+  "bn_index": 233.92130642
+ },
+ {
+  "ticker": "SOFTBANK",
+  "status": "ok",
+  "real": "9984",
+  "exchange": "TSEJ",
+  "ccy": "JPY",
+  "close_usd": 33.098,
+  "bn_index": null
+ },
+ {
+  "ticker": "HIMS",
+  "status": "ok",
+  "real": "HIMS",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 31.86,
+  "bn_index": 32.00375413
+ },
+ {
+  "ticker": "COHR",
+  "status": "ok",
+  "real": "COHR",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 290.03,
+  "bn_index": 296.35629838
+ },
+ {
+  "ticker": "WDC",
+  "status": "ok",
+  "real": "WDC",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 469.05,
+  "bn_index": 476.85697868
+ },
+ {
+  "ticker": "IREN",
+  "status": "ok",
+  "real": "IREN",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 42.6,
+  "bn_index": 43.24304079
+ },
+ {
+  "ticker": "NOW",
+  "status": "ok",
+  "real": "NOW",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 129.75,
+  "bn_index": 129.38848812
+ },
+ {
+  "ticker": "TENCENT",
+  "status": "ok",
+  "real": "0700",
+  "exchange": "SEHK",
+  "ccy": "HKD",
+  "close_usd": 58.288,
+  "bn_index": 58.19855828
+ },
+ {
+  "ticker": "POPMART",
+  "status": "ok",
+  "real": "9992",
+  "exchange": "SEHK",
+  "ccy": "HKD",
+  "close_usd": 19.004,
+  "bn_index": 19.00894301
+ },
+ {
+  "ticker": "HYUNDAI",
+  "status": "ok",
+  "real": "005380",
+  "exchange": "KRX",
+  "ccy": "KRW",
+  "close_usd": 299.81,
+  "bn_index": 299.4856542
+ },
+ {
+  "ticker": "NOK",
+  "status": "ok",
+  "real": "NOK",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 10.15,
+  "bn_index": 10.38530356
+ },
+ {
+  "ticker": "XLE",
+  "status": "ok",
+  "real": "XLE",
+  "exchange": "ARCA",
+  "ccy": "USD",
+  "close_usd": 63.75,
+  "bn_index": 63.66496664
+ },
+ {
+  "ticker": "BSP",
+  "status": "ok",
+  "real": "BSP",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 39.93,
+  "bn_index": 40.21941582
+ },
+ {
+  "ticker": "AMAT",
+  "status": "ok",
+  "real": "AMAT",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 496.21,
+  "bn_index": 504.01433805
+ },
+ {
+  "ticker": "INTW",
+  "status": "ok",
+  "real": "INTW",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 19.64,
+  "bn_index": 20.05643156
+ },
+ {
+  "ticker": "GLW",
+  "status": "ok",
+  "real": "GLW",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 151.45,
+  "bn_index": 153.70511905
+ },
+ {
+  "ticker": "GME",
+  "status": "ok",
+  "real": "GME",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 18.04,
+  "bn_index": 18.16131362
+ },
+ {
+  "ticker": "NVO",
+  "status": "ok",
+  "real": "NVO",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 46.14,
+  "bn_index": 46.31678688
+ },
+ {
+  "ticker": "URNM",
+  "status": "ok",
+  "real": "URNM",
+  "exchange": "ARCA",
+  "ccy": "USD",
+  "close_usd": 54.05,
+  "bn_index": 54.6210131
+ },
+ {
+  "ticker": "QNTX",
+  "status": "ok",
+  "real": "QNT",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 54.9,
+  "bn_index": 55.6752546
+ },
+ {
+  "ticker": "RIVN",
+  "status": "ok",
+  "real": "RIVN",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 16.01,
+  "bn_index": 16.11381442
+ },
+ {
+  "ticker": "BOT",
+  "status": "ok",
+  "real": "BOT",
+  "exchange": "NASDAQ",
+  "ccy": "USD",
+  "close_usd": 28.41,
+  "bn_index": 28.85169451
+ },
+ {
+  "ticker": "GEV",
+  "status": "ok",
+  "real": "GEV",
+  "exchange": "NYSE",
+  "ccy": "USD",
+  "close_usd": 966.01,
+  "bn_index": 978.36698491
+ }
+]

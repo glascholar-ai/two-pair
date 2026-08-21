@@ -163,11 +163,27 @@ def main() -> None:
             fx_rate[ccy] = float(df["c"].iloc[-1])
         print(f"fx {pair}: {len(df)} bars last={fx_rate.get(ccy)}", flush=True)
 
+    old_map: Dict[str, Dict[str, Any]] = {}
+    map_p = DYN / "ib_map.json"
+    if map_p.exists():
+        old_map = {r["ticker"]: r for r in json.loads(map_p.read_text())}
     report: List[Dict[str, Any]] = []
     for rank, t in enumerate(order):
         kind = seen[t]["kind"]
         if kind == "CN_EQUITY":
             report.append({"ticker": t, "status": "skip_cn_equity"})
+            continue
+        # resume: bars already cached from a previous (partial) run
+        p1, p10 = OUT / f"{t}_1m.parquet", OUT / f"{t}_10s.parquet"
+        if p1.exists() and (rank >= TOP_10S or p10.exists()):
+            prev = old_map.get(t)
+            ccy = {"HK_EQUITY": "HKD", "KR_EQUITY": "KRW"}.get(kind, "USD")
+            if t in JP_MAP:
+                ccy = "JPY"
+            report.append(prev if prev and prev.get("status") == "ok"
+                          else {"ticker": t, "status": "ok", "ccy": ccy,
+                                "resumed": True})
+            print(f"{t:12s} cached, skip", flush=True)
             continue
         res = resolve_contract(t, kind, str(seen[t]["bn_symbol"]))
         if res is None:
@@ -204,17 +220,20 @@ def main() -> None:
               f"idx={bn_idx}", flush=True)
         if not ok:
             continue
-        m1 = fetch_chunks(ib, contract, "1 min", "TRADES", False, N_DAYS, 5)
-        if len(m1):
-            m1.to_parquet(OUT / f"{t}_1m.parquet", index=False)
-        print(f"{t:12s} 1m bars: {len(m1)}", flush=True)
-        if rank < TOP_10S:
+        if not p1.exists():
+            m1 = fetch_chunks(ib, contract, "1 min", "TRADES", False,
+                              N_DAYS, 5)
+            if len(m1):
+                m1.to_parquet(p1, index=False)
+            print(f"{t:12s} 1m bars: {len(m1)}", flush=True)
+        if rank < TOP_10S and not p10.exists():
             s10 = fetch_chunks(ib, contract, "10 secs", "MIDPOINT", True,
                                N_DAYS, 1)
             if len(s10):
-                s10.to_parquet(OUT / f"{t}_10s.parquet", index=False)
+                s10.to_parquet(p10, index=False)
             print(f"{t:12s} 10s bars: {len(s10)}", flush=True)
-    (DYN / "ib_map.json").write_text(json.dumps(report, indent=1))
+        map_p.write_text(json.dumps(report, indent=1))   # incremental save
+    map_p.write_text(json.dumps(report, indent=1))
     ib.disconnect()
     n_ok = sum(1 for r in report if r["status"] == "ok")
     print(f"done: {n_ok}/{len(report)} mapped+verified", flush=True)
