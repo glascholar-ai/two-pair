@@ -44,8 +44,10 @@ FX 调整 log 比价、24h 滚动锚（288×5m，锚窗口须为 24h 整数倍�
 papi 有 ~1s 读后写延迟、无 countdownCancelAll）、密钥在 GCP Secret Manager
 （`binance-t32-apikey`/`binance-t32-secret-key`）、Telegram 已配置。
 仓位以交易所为唯一事实源（每轮对账），journal.sqlite 仅作研究记录。
-用户同时运行海力士 cash-and-carry（IBKR 正股 + 币安空 perp），与本策略
-风险互补。
+用户曾同时运行海力士 cash-and-carry（IBKR 正股 + 币安空 perp，2026-07-29→
+08-21 清仓，费后 +$187k/$5.3M，总结 `~/app/skfunding/summary.txt`），与本
+策略风险互补；动态化复盘见 `extends/docs/scan/dynamic_carry.md`（溢价+
+funding 联动择时优于静态持有），funding 追踪器在 `~/app/stocka/perpfund`。
 
 # 工作规则
 

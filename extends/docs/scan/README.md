@@ -20,6 +20,15 @@ xyz（股票/商品/FX），参考价用本机 IBKR（只读）历史数据。
 | A1 | **死区（00–08 UTC）+ 周末 极端波动被动回归**：EWMA30m ± kσ 挂 maker 单，触碰 EWMA 出 | |z|>4 事件 n=2160，fwd180m 同向 −23 bps（t −7.6），85 名中 70 名为负、2–8 月每月为负；挂单模拟 k=4：DEAD 净 +7.8 bps/笔、31 笔/日、$20k/笔 ≈ $705/日；WKND 净 +14.5 bps、$1.6k/日、72/85 名为正、maxDD $2.7k | 只在 maker 0 费下成立（双 taker 只剩 +3.8）；6–8 月才赚（与扩容重叠，样本短）；赚钱靠中小盘，MU/SNDK/NVDA/TSLA 净为负；死区 5m 成交额仅 RTH 21%，"影线穿越=成交"是上限假设；先用真实盘口验证 4σ 远端成交率 2–4 周；前晚 AH \|收益\|>3% 名字次日不挂 | `offhours_reversal.md` |
 | A2 | **ADR/欧股 perp 对母市场实时价的 5 分钟滞后**（ASML 为主） | ASML perp 对 Euronext 实时价 lag+1 相关显著、"母线上根多走>2σ 同向做 perp"：14.8 bps/5m、t 7.4、胜率 73%；basis MR 22 bps/10min（t 5.2，3.8 笔/日）；NVO 边≈费用；港股三线（HK1810 56 bps、TENCENT/HK0700 27–28 bps）潜力最大但只有 17 天样本 | 信号需 IBKR 实时 Euronext/HK 行情；perp 是滞后方、收敛全由 perp 腿完成，因此只需交易 perp；BABA/EWY/EWJ/TSM 零滞后无边 | `adr_homeline_basis.md` |
 
+### A3（08-21 追加）. 动态 cash-and-carry 择时（perp 溢价 + funding 联动）
+
+skfunding 实盘（SK 海力士 carry，07-29→08-21，+$187k/$5.3M）的系统化：KRX 开盘时段
+1h 均溢价 ≥30 bps 进（此时 funding 也高——溢价领先 funding）、≤−10 bps 出。80 天回测
+SKHYNIX 动态净 1653/1203 bps（低/高摩擦）vs 静态持有 1177，超额一半来自反复卖溢价、
+一半来自躲开负 funding 时段；funding 高位有持续性（尾 7d >40% APR → 未来 7d 中位 48%，
+横截面 Spearman 0.26–0.50）。勿用 funding 本身做出场（太碎，摩擦吃死）。8 月溢价 regime
+已压缩、超额变薄；黄金期是新名字上市头两个月。详见 `dynamic_carry.md`。
+
 ### B. 备忘 / 需更多样本再评估
 
 | # | 观察 | 数字 | 子报告 |
@@ -79,5 +88,6 @@ xyz（股票/商品/FX），参考价用本机 IBKR（只读）历史数据。
 | `commodity_fx_perps.md` | 商品/FX perp 清单、CME 休市窗口、期货 basis、跨所 |
 | `binance_vs_hl.md` | 两所指数/标记/资金费机制 + 同股价差/资金费差/领先滞后 |
 | `hl_kr_spread_mr.md` | 韩股腿跨所价差均值回归成交级回测（08-18 追加；BN 韩股资金费实为 4h 一期） |
+| `dynamic_carry.md` | 动态 cash-and-carry 择时：溢价+funding 联动 vs 静态持有（08-21 追加） |
 | `events_calendar.md` | 假日、宏观、财报、opex、周末结构 |
 | 脚本 | `scan_offhours_*.py`、`scan_basis_*.py`、`scan_adr_*.py`、`scan_cmdty_*.py`、`scan_hl_*.py`、`scan_events_*.py`、`session_anomaly_scan.py` |
