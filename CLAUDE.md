@@ -48,6 +48,9 @@ papi 有 ~1s 读后写延迟、无 countdownCancelAll）、密钥在 GCP Secret 
 08-21 清仓，费后 +$187k/$5.3M，总结 `~/app/skfunding/summary.txt`），与本
 策略风险互补；动态化复盘见 `extends/docs/scan/dynamic_carry.md`（溢价+
 funding 联动择时优于静态持有），funding 追踪器在 `~/app/stocka/perpfund`。
+**funding 套利类策略的用户风险规则：perp 侧杠杆 ≤1×（开仓名义不超过保证
+金），不得以更高杠杆假设做资本效率论证**；全域动态回测与 A/B（对冲腿=正股
+vs 对面 perp）裁决见 `extends/docs/scan/dyn_carry_backtest.md`。
 
 # 工作规则
 
