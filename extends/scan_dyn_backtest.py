@@ -42,6 +42,12 @@ CUSHION = 1.5                    # entry premium >= CUSHION x round-trip cost
 MIN_PREM_BPS = 20.0
 EXIT_BPS = 0.0
 MIN_TRAIL_APR = 8.0              # trailing-7d funding APR gate (type A)
+FAT_APR = 25.0                   # 30d APR above which funding-first entry opens
+FAT_ENTRY_APR = 20.0             # trailing-7d APR to enter without premium edge
+FAT_EXIT_APR = 8.0               # trailing-7d APR below which fat position exits
+FAT_STOP_BPS = -100.0            # basis blowout stop for fat entries (smoothed)
+FAT_KINDS = {"EQUITY", "KR_EQUITY", "JP"}   # stock legs cheap enough for
+# funding-first entries; HK excluded (26bp friction + flaky funding regimes)
 B_ENTRY_APR = 15.0               # type B trailing spread entry
 B_EXIT_APR = 5.0
 BORROW_APR = 1.0                 # % p.a. charged on short-stock legs
@@ -266,7 +272,11 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
         cost += 2.0 * float(df.attrs.get("half_spread", 1.0))
         frames[key] = {
             "r": r, "df": df, "dir": dirn, "venue_db": venue, "cost": cost,
-            "entry_thr": max(CUSHION * cost, MIN_PREM_BPS)}
+            "entry_thr": max(CUSHION * cost, MIN_PREM_BPS),
+            # funding-first mode: only for fat positive-funding names (short
+            # perp / long stock; the discount side would need stock borrow)
+            "fat": dirn == 1 and abs(float(r["apr"])) >= FAT_APR
+                and str(df["kind"].iloc[0]) in FAT_KINDS}
     # merged event grid
     events: List[Tuple[int, str, int]] = []       # (ts, key, row_idx)
     for key, f in frames.items():
@@ -290,7 +300,13 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
         sig = dirn * prem_s
         if key in open_pos:
             pos = open_pos[key]
-            if sig <= EXIT_BPS and i + FILL_LAG_BARS < len(df):
+            if pos.get("mode") == "fat":
+                apr_now = fb.trail7_apr(f["venue_db"], str(f["r"]["ticker"]),
+                                        ts) * dirn
+                do_exit = apr_now <= FAT_EXIT_APR or sig <= FAT_STOP_BPS
+            else:
+                do_exit = sig <= EXIT_BPS
+            if do_exit and i + FILL_LAG_BARS < len(df):
                 j = i + FILL_LAG_BARS
                 xts = int(df["ts"].iloc[j])
                 xprem = float(df["prem_bps"].iloc[j])
@@ -302,7 +318,8 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
                 gross = dirn * (pos["prem_in"] - xprem)
                 net = gross + fnd - f["cost"] - borrow
                 closed.append({
-                    "type": "A", "key": key, "t_in": pos["t_in"], "t_out": xts,
+                    "type": "A", "key": key, "mode": pos.get("mode", "prem"),
+                    "t_in": pos["t_in"], "t_out": xts,
                     "days": round(hold_d, 2), "notional": pos["notional"],
                     "prem_in": round(pos["prem_in"], 1),
                     "prem_out": round(xprem, 1), "dir": dirn,
@@ -314,11 +331,16 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
                 cooldown[key] = xts + COOLDOWN_MS
                 del open_pos[key]
         else:
-            if sig >= f["entry_thr"] and i + FILL_LAG_BARS < len(df) \
-                    and ts >= cooldown.get(key, 0):
-                apr_tr = fb.trail7_apr(f["venue_db"], str(f["r"]["ticker"]), ts)
-                if dirn * apr_tr < MIN_TRAIL_APR:
-                    continue
+            if i + FILL_LAG_BARS >= len(df) or ts < cooldown.get(key, 0):
+                continue
+            apr_tr = fb.trail7_apr(f["venue_db"], str(f["r"]["ticker"]),
+                                   ts) * dirn
+            mode = ""
+            if sig >= f["entry_thr"] and apr_tr >= MIN_TRAIL_APR:
+                mode = "prem"
+            elif f["fat"] and apr_tr >= FAT_ENTRY_APR and sig > -f["cost"]:
+                mode = "fat"     # funding-first: enter near flat basis
+            if mode:
                 j = i + FILL_LAG_BARS
                 slot = float(df["slot_usd"].iloc[j]) if np.isfinite(
                     float(df["slot_usd"].iloc[j])) else 0.0
@@ -330,7 +352,7 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
                 open_pos[key] = {
                     "t_in": int(df["ts"].iloc[j]),
                     "prem_in": float(df["prem_bps"].iloc[j]),
-                    "notional": notional}
+                    "notional": notional, "mode": mode}
                 stock_used += notional
                 perp_used += notional
         day = datetime.fromtimestamp(ts / 1000, timezone.utc).strftime(
@@ -352,7 +374,8 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
         borrow = BORROW_APR * 100 / 365 * hold_d if dirn == -1 else 0.0
         gross = dirn * (pos["prem_in"] - xprem)
         net = gross + fnd - f["cost"] - borrow
-        closed.append({"type": "A", "key": key, "t_in": pos["t_in"],
+        closed.append({"type": "A", "key": key, "mode": pos.get("mode", "prem"),
+                       "t_in": pos["t_in"],
                        "t_out": xts, "days": round(hold_d, 2),
                        "notional": pos["notional"],
                        "prem_in": round(pos["prem_in"], 1),
