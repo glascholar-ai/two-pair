@@ -36,7 +36,7 @@ WINDOW_DAYS = 30
 CAPITAL_STOCK = 5_000_000.0      # USD cash for stock legs (type A)
 CAPITAL_PERP = 5_000_000.0       # USD perp margin, 1x notional
 OI_CAP = 0.15
-CAP_PER_NAME = 1_500_000.0
+CAP_PER_NAME = 1500000.0
 MIN_TICKET = 50_000.0
 CUSHION = 1.5                    # entry premium >= CUSHION x round-trip cost
 MIN_PREM_BPS = 20.0
@@ -59,10 +59,20 @@ BORROW_APR = 1.0                 # % p.a. charged on short-stock legs
 FILL_LAG_BARS = 1
 SMOOTH_BARS = 12                 # 1h median on the 5m decision grid
 COOLDOWN_MS = 2 * 3_600_000      # re-entry cooldown per name after exit
-# Round-trip friction (both directions, one-leg notional bps): stock leg by
-# market + perp leg by venue (BN taker 4x2; HL xyz growth 0.9x2, para 4.5x2).
-STOCK_RT = {"EQUITY": 6.0, "HK_EQUITY": 26.0, "KR_EQUITY": 24.0, "JP": 6.0}
-PERP_RT = {"BN": 8.0, "xyz": 1.8, "para": 9.0}
+# Round-trip friction (both directions, one-leg notional bps).
+# Perp legs executed as MAKER (fat + most prem entries are not time-critical):
+# BN TradFi maker 0 (current promo); HL xyz growth maker 0.003%/side; para
+# (standard HIP-3) maker 0.03%/side. The 2x effective-half-spread charge stays
+# — it models adverse selection / fill quality, not fees.
+PERP_RT = {"BN": 0.0, "xyz": 0.6, "para": 6.0}
+# Stock legs at actual IBKR tiered rates + statutory taxes:
+#   US: $0.0035/share/side (converted per name via its price) + SEC 0.28bp sell
+#   HK: stamp 0.10%/side x2 + levies ~0.17bp + commission 0.03%/side
+#   KR: sell tax 0.20% (0.05% STT + 0.15% rural, 2026) + commission 0.04%/side
+#   JP: commission 0.05%/side, no stamp
+STOCK_RT_FIXED = {"HK_EQUITY": 26.2, "KR_EQUITY": 28.0, "JP": 10.0}
+US_COMM_PER_SHARE = 0.0035
+US_SELL_REG_BPS = 0.28
 SESSIONS = {                     # UTC minutes-of-day windows, Aug 2026 (DST)
     "EQUITY": [(810, 1200)],
     "HK_EQUITY": [(90, 240), (300, 480)],
@@ -254,9 +264,15 @@ def build_a_frame(r: Dict[str, Any], ib_ok: Dict[str, Dict[str, Any]],
     return cast(pd.DataFrame, m.reset_index(drop=True))
 
 
-def cost_rt_bps(kind: str, venue: str, dex: str) -> float:
-    perp = PERP_RT["BN"] if venue == "BN" else PERP_RT.get(dex, 9.0)
-    return STOCK_RT[kind] + perp
+def cost_rt_bps(kind: str, venue: str, dex: str,
+                stock_px_usd: float) -> float:
+    perp = PERP_RT["BN"] if venue == "BN" else PERP_RT.get(dex, 6.0)
+    if kind in STOCK_RT_FIXED:
+        stock = STOCK_RT_FIXED[kind]
+    else:   # US: per-share commission both sides + sell-side regulatory
+        stock = 2 * US_COMM_PER_SHARE / max(stock_px_usd, 1.0) * 1e4 \
+            + US_SELL_REG_BPS
+    return stock + perp
 
 
 def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
@@ -273,7 +289,8 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
         dirn = 1 if float(r["apr"]) > 0 else -1     # +1 = short perp/long stock
         venue = "binance" if r["venue"] == "BN" else "hyperliquid"
         cost = cost_rt_bps(str(df["kind"].iloc[0]), str(r["venue"]),
-                           str(r.get("dex") or ""))
+                           str(r.get("dex") or ""),
+                           float(col(df, "px").median()))
         cost += 2.0 * float(df.attrs.get("half_spread", 1.0))
         frames[key] = {
             "r": r, "df": df, "dir": dirn, "venue_db": venue, "cost": cost,
