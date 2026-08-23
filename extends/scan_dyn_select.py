@@ -182,9 +182,13 @@ def main() -> None:
             a, s = r[apr_c], r[slot_c]
             if bool(pd.notna(a)) and bool(pd.notna(s)) \
                     and abs(float(a)) >= MIN_APR and float(s) >= MIN_SLOT:
+                a7 = r[f"apr_{venue.lower()}_7d"]
                 a_rows.append({
                     "ticker": r["ticker"], "venue": venue, "kind": r["kind"],
-                    "apr": round(float(a), 1), "slot_kusd": round(float(s) / 1e3),
+                    "apr": round(float(a), 1),
+                    "apr_7d": round(float(a7), 1)
+                    if bool(pd.notna(a7)) else None,
+                    "slot_kusd": round(float(s) / 1e3),
                     "side": "short_perp" if float(a) > 0 else "long_perp",
                     "bn_symbol": r["symbol"],
                     "hl_coin": r.get("coin_pick"), "dex": r.get("dex_pick")})

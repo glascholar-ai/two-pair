@@ -46,8 +46,11 @@ FAT_APR = 25.0                   # 30d APR above which funding-first entry opens
 FAT_ENTRY_APR = 20.0             # trailing-7d APR to enter without premium edge
 FAT_EXIT_APR = 8.0               # trailing-7d APR below which fat position exits
 FAT_STOP_BPS = -100.0            # basis blowout stop for fat entries (smoothed)
-FAT_KINDS = {"EQUITY", "KR_EQUITY", "JP"}   # stock legs cheap enough for
-# funding-first entries; HK excluded (26bp friction + flaky funding regimes)
+# funding-first eligible stock legs. HK was excluded 08-21 after ZHIPU/MINIMAX
+# regime-death losses; user override 08-23 (ZHIPU 7d APR back to ~34%): the
+# July losses were a name-level regime call, not an HK property — admission is
+# the human whitelist's job, not a market-level filter.
+FAT_KINDS = {"EQUITY", "KR_EQUITY", "HK_EQUITY", "JP"}
 # In production the fat-mode universe is a HUMAN-CURATED whitelist (funding
 # persistence record, borrow/access sanity) — FAT_KINDS+FAT_APR is its backtest
 # proxy. FAT_PREM_FLOOR: entry premium must be >= this multiple of the
@@ -276,13 +279,18 @@ def build_a_frame(r: Dict[str, Any], ib_ok: Dict[str, Dict[str, Any]],
     block = (col(m, "ts").diff() > 900_000).cumsum()
     m["prem_bps"] = col(m, "prem_raw").groupby(block).transform(
         lambda s: s.rolling(SMOOTH_BARS, min_periods=SMOOTH_BARS).median())
-    # effective half-spread of the perp leg, estimated from 5m close-to-close
-    # moves (thin xyz names trade inside a wide book; last-price bounce is not
-    # capturable). Charged as 2x per round trip on top of fee cost.
-    dperp = np.abs(np.diff(np.log(col(m, "perp").to_numpy(dtype=float)))) * 1e4
-    half_spread = max(float(np.median(dperp[dperp > 0])) if len(dperp) else 1.0,
-                      1.0)
-    m.attrs["half_spread"] = half_spread
+    # Two half-spread estimates for the perp leg, applied by trade type:
+    #   roll: Roll (1984) sqrt(-cov(r_t,r_{t-1})) — pure bid-ask bounce, vol
+    #         cancels. Right for patient fat entries at calm 1h medians (a
+    #         median-|move| charge would bill ZHIPU's genuine vol as spread).
+    #   med:  median |5m move| — right for prem dislocation-fade trades,
+    #         where you cross a book whose effective spread widens with vol
+    #         (Roll under-charges momentum-heavy thin names to its floor).
+    px = col(m, "perp").to_numpy(dtype=float)
+    m.attrs["hs_roll"] = roll_half_spread(px)
+    dperp = np.abs(np.diff(np.log(px))) * 1e4
+    m.attrs["hs_med"] = max(
+        float(np.median(dperp[dperp > 0])) if len(dperp) else 1.0, 1.0)
     oi = None if r["venue"] == "HL" else load_oi_series(str(r["bn_symbol"]))
     if oi is not None:
         m = pd.merge_asof(m.sort_values("ts"), oi.sort_values("ts"),
@@ -292,6 +300,19 @@ def build_a_frame(r: Dict[str, Any], ib_ok: Dict[str, Dict[str, Any]],
         m["slot_usd"] = float(r["slot_kusd"]) * 1e3    # HL: snapshot constant
     m["kind"] = kind
     return cast(pd.DataFrame, m.reset_index(drop=True))
+
+
+def roll_half_spread(px: np.ndarray, floor: float = 1.0) -> float:
+    """Roll (1984) effective half-spread in bps from serial covariance of
+    log returns; directional volatility cancels, bounce survives."""
+    r = np.diff(np.log(px))
+    r = r[np.isfinite(r)]
+    if len(r) < 50:
+        return floor
+    cov = float(np.cov(r[1:], r[:-1])[0, 1])
+    if cov >= 0:
+        return floor
+    return max(float(np.sqrt(-cov)) * 1e4, floor)
 
 
 def cost_rt_bps(kind: str, venue: str, dex: str,
@@ -318,16 +339,22 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
             continue
         dirn = 1 if float(r["apr"]) > 0 else -1     # +1 = short perp/long stock
         venue = "binance" if r["venue"] == "BN" else "hyperliquid"
-        cost = cost_rt_bps(str(df["kind"].iloc[0]), str(r["venue"]),
+        base = cost_rt_bps(str(df["kind"].iloc[0]), str(r["venue"]),
                            str(r.get("dex") or ""),
                            float(col(df, "px").median()))
-        cost += 2.0 * float(df.attrs.get("half_spread", 1.0))
+        cost_prem = base + 2.0 * float(df.attrs.get("hs_med", 1.0))
+        cost_fat = base + 2.0 * float(df.attrs.get("hs_roll", 1.0))
         frames[key] = {
-            "r": r, "df": df, "dir": dirn, "venue_db": venue, "cost": cost,
-            "entry_thr": max(CUSHION * cost, MIN_PREM_BPS),
+            "r": r, "df": df, "dir": dirn, "venue_db": venue,
+            "cost": cost_prem, "cost_fat": cost_fat,
+            "entry_thr": max(CUSHION * cost_prem, MIN_PREM_BPS),
             # funding-first mode: only for fat positive-funding names (short
-            # perp / long stock; the discount side would need stock borrow)
-            "fat": dirn == 1 and abs(float(r["apr"])) >= FAT_APR
+            # perp / long stock; the discount side would need stock borrow).
+            # Eligibility on max(30d, 7d) APR so current-regime names (ZHIPU
+            # 7d 34% vs 30d 22%) are not blocked by a cold monthly average.
+            "fat": dirn == 1 and max(
+                abs(float(r["apr"])),
+                abs(float(r.get("apr_7d") or 0.0))) >= FAT_APR
                 and str(df["kind"].iloc[0]) in FAT_KINDS}
     # merged event grid
     events: List[Tuple[int, str, int]] = []       # (ts, key, row_idx)
@@ -368,7 +395,8 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
                 borrow = (BORROW_APR * 100 / 365 * hold_d
                           if dirn == -1 else 0.0)
                 gross = dirn * (pos["prem_in"] - xprem)
-                net = gross + fnd - f["cost"] - borrow
+                cost_x = pos.get("cost", f["cost"])
+                net = gross + fnd - cost_x - borrow
                 closed.append({
                     "type": "A", "key": key, "mode": pos.get("mode", "prem"),
                     "t_in": pos["t_in"], "t_out": xts,
@@ -376,7 +404,7 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
                     "prem_in": round(pos["prem_in"], 1),
                     "prem_out": round(xprem, 1), "dir": dirn,
                     "basis_bps": round(gross, 1), "fund_bps": round(fnd, 1),
-                    "cost_bps": f["cost"], "net_bps": round(net, 1),
+                    "cost_bps": round(cost_x, 1), "net_bps": round(net, 1),
                     "pnl_usd": round(net / 1e4 * pos["notional"], 0)})
                 stock_used -= pos["notional"]
                 perp_used -= pos["notional"]
@@ -391,7 +419,7 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
             if sig >= f["entry_thr"] and apr_tr >= MIN_TRAIL_APR:
                 mode = "prem"
             elif f["fat"] and apr_tr >= FAT_ENTRY_APR \
-                    and sig >= FAT_PREM_FLOOR * f["cost"]:
+                    and sig >= FAT_PREM_FLOOR * f["cost_fat"]:
                 mode = "fat"     # funding-first: basis covers the round trip
             if mode:
                 j = i + FILL_LAG_BARS
@@ -405,7 +433,8 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
                 open_pos[key] = {
                     "t_in": int(df["ts"].iloc[j]),
                     "prem_in": float(df["prem_bps"].iloc[j]),
-                    "notional": notional, "mode": mode}
+                    "notional": notional, "mode": mode,
+                    "cost": f["cost_fat"] if mode == "fat" else f["cost"]}
                 stock_used += notional
                 perp_used += notional
         day = datetime.fromtimestamp(ts / 1000, timezone.utc).strftime(
@@ -426,7 +455,8 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
         hold_d = (xts - pos["t_in"]) / 86_400_000
         borrow = BORROW_APR * 100 / 365 * hold_d if dirn == -1 else 0.0
         gross = dirn * (pos["prem_in"] - xprem)
-        net = gross + fnd - f["cost"] - borrow
+        cost_x = pos.get("cost", f["cost"])
+        net = gross + fnd - cost_x - borrow
         closed.append({"type": "A", "key": key, "mode": pos.get("mode", "prem"),
                        "t_in": pos["t_in"],
                        "t_out": xts, "days": round(hold_d, 2),
@@ -434,7 +464,7 @@ def run_type_a(cand: List[Dict[str, Any]], ib_ok: Dict[str, Dict[str, Any]],
                        "prem_in": round(pos["prem_in"], 1),
                        "prem_out": round(xprem, 1), "dir": dirn,
                        "basis_bps": round(gross, 1), "fund_bps": round(fnd, 1),
-                       "cost_bps": f["cost"], "net_bps": round(net, 1),
+                       "cost_bps": round(cost_x, 1), "net_bps": round(net, 1),
                        "pnl_usd": round(net / 1e4 * pos["notional"], 0),
                        "open_at_end": True})
     return closed, pd.DataFrame(util_rows)
@@ -463,9 +493,7 @@ def run_type_b(cand: List[Dict[str, Any]], fb: FundingBook,
         m = cast(pd.DataFrame, m.dropna(subset=["sprd"]))
         cost = PERP_RT["BN"] + PERP_RT.get(str(r["dex"]), 9.0)
         for leg in ("bn", "hl"):
-            dl = np.abs(np.diff(np.log(col(m, leg).to_numpy(dtype=float)))) * 1e4
-            cost += 2.0 * max(float(np.median(dl[dl > 0])) if len(dl) else 1.0,
-                              1.0)
+            cost += 2.0 * roll_half_spread(col(m, leg).to_numpy(dtype=float))
         slot = float(r["slot_kusd"]) * 1e3
         notional = min(slot, CAP_PER_NAME)
         pos: Optional[Dict[str, Any]] = None
