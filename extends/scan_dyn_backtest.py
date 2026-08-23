@@ -89,17 +89,47 @@ def col(df: pd.DataFrame, name: str) -> pd.Series:
 
 
 class FundingBook:
-    """Per (venue,ticker) funding events + trailing daily APR lookup."""
+    """Per (venue,ticker) funding events + trailing daily APR lookup.
+
+    Prefers the self-contained API caches (data/dyn/funding_{bn,hl}.parquet,
+    scan_dyn_fetch_funding.py) over perpfund.db: the db may be mid-migration
+    in another session, and it keys one dex per HL ticker while funding can
+    differ materially between xyz and para (AVGO). HL rows are filtered to the
+    exact coin each candidate trades (candidates.json hl_coin).
+    """
 
     def __init__(self) -> None:
-        conn = sqlite3.connect(DB)
-        f = pd.read_sql("SELECT venue,ticker,ts,rate FROM funding", conn)
-        conn.close()
+        bn_p = DYN / "funding_bn.parquet"
+        hl_p = DYN / "funding_hl.parquet"
+        if bn_p.exists() and hl_p.exists():
+            bn = pd.read_parquet(bn_p)
+            bn["venue"] = "binance"
+            hl = pd.read_parquet(hl_p)
+            cand_p = DYN / "candidates.json"
+            coin_of: Dict[str, str] = {}
+            if cand_p.exists():
+                cand = json.loads(cand_p.read_text())
+                for r in cand["type_a"] + cand["type_b"]:
+                    if r.get("hl_coin"):
+                        coin_of[str(r["ticker"])] = str(r["hl_coin"])
+            keep = col(hl, "ticker").map(
+                lambda t: coin_of.get(str(t), "")) == col(hl, "coin")
+            fallback = ~col(hl, "ticker").isin(list(coin_of))
+            hl = cast(pd.DataFrame, hl[keep | fallback]).copy()
+            hl = cast(pd.DataFrame,
+                      hl.sort_values("ts")).drop_duplicates(["ticker", "ts"])
+            hl["venue"] = "hyperliquid"
+            f = pd.concat([bn[["venue", "ticker", "ts", "rate"]],
+                           hl[["venue", "ticker", "ts", "rate"]]])
+        else:
+            conn = sqlite3.connect(DB)
+            f = pd.read_sql("SELECT venue,ticker,ts,rate FROM funding", conn)
+            conn.close()
         self.ev: Dict[Tuple[str, str], Tuple[np.ndarray, np.ndarray]] = {}
         self.daily: Dict[Tuple[str, str], pd.Series] = {}
         for key_vt, g in f.groupby(["venue", "ticker"]):
             v, t = cast(Tuple[str, str], key_vt)
-            g = g.sort_values("ts")
+            g = cast(pd.DataFrame, g).sort_values("ts")
             ts = g["ts"].to_numpy(dtype="int64")
             rt = g["rate"].to_numpy(dtype=float)
             key = (str(v), str(t))
