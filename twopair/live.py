@@ -31,7 +31,7 @@ from twopair.journal import Journal
 from twopair.notify import Notifier
 from twopair.risk import RiskGuard
 from twopair.signal import Bar, SignalEngine, SignalState, segment_of
-from twopair.strategy import Action, Decision, Strategy
+from twopair.strategy import Action, CloseReason, Decision, Strategy
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +57,16 @@ def classify_sync(view: PairView, kr_price: float, us_price: float,
 
     Args:
         view: Exchange truth for the two legs.
-        kr_price: Current KR-leg price (to value quantities).
+        kr_price: Current KR-leg price (dust check; balance fallback).
         us_price: Current US-leg price.
         local_side: Strategy's position side, 0 when flat.
         dust_usdt: Leg notionals below this count as flat.
-        tolerance_pct: Max abs notional mismatch between legs, in %.
+        tolerance_pct: Max abs mismatch between the legs' notionals valued
+            at their ENTRY prices, in %. Entry-price valuation makes the
+            check a pure quantity test: legs that drift apart in price
+            (i.e. an ordinary losing or winning spread) must never look
+            like a broken pair. Current prices are the fallback only when
+            the exchange reports no entry price.
 
     Returns:
         (action, side, detail) where action is a SyncAction constant and
@@ -76,8 +81,12 @@ def classify_sync(view: PairView, kr_price: float, us_price: float,
             return SyncAction.NONE, 0, ""
         return SyncAction.DROP, 0, "exchange flat but local position exists"
     if kr_on and us_on and kr_notional * us_notional < 0:
-        bigger = max(abs(kr_notional), abs(us_notional))
-        mismatch = abs(abs(kr_notional) - abs(us_notional)) / bigger * 100.0
+        kr_bal = view.kr_qty * (view.kr_entry if view.kr_entry > 0
+                                else kr_price)
+        us_bal = view.us_qty * (view.us_entry if view.us_entry > 0
+                                else us_price)
+        bigger = max(abs(kr_bal), abs(us_bal))
+        mismatch = abs(abs(kr_bal) - abs(us_bal)) / bigger * 100.0
         if mismatch <= tolerance_pct:
             side = 1 if view.kr_qty > 0 else -1
             if local_side == 0:
@@ -331,8 +340,12 @@ class LiveApp:
             self._journal.record_fill(bar.ts, fill.symbol, fill.side,
                                       fill.qty, fill.price, fill.order_id,
                                       "repair")
-        if self._strategy.position is not None:
-            self._strategy.drop_position()
+        if pos is not None:
+            trade = self._strategy.close_external(
+                bar.ts, view.pnl_usd / pos.leg_notional_usdt * 100.0,
+                CloseReason.REPAIR)
+            self._journal.record_trade(trade, self._cfg.mode_label())
+            self._guard.record_trade_pnl(trade.exit_ts, trade.pnl_pct)
         msg = f"sync repair: {detail}; flattened (ok={result.ok})"
         logger.error(msg)
         self._notify.send(msg)

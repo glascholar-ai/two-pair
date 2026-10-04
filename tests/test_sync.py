@@ -69,6 +69,26 @@ class TestClassifySync:
         action, _, _ = classify(view(0.909, -6.76), 1)
         assert action == SyncAction.TRACK
 
+    def test_price_drift_of_balanced_legs_tracks_not_repairs(self) -> None:
+        # Regression (ewysam 2026-09-27): legs balanced at entry (990 vs
+        # 1000.5 USD) drifted apart in PRICE (KR +2%, US +8%), so current
+        # notionals differ 6.5% — an ordinary losing spread, not a broken
+        # pair. Valued at entry prices it is still balanced.
+        v = PairView(kr_qty=0.9, us_qty=-6.9, pnl_usd=-60.0,
+                     kr_entry=KR_PX, us_entry=US_PX)
+        action, side, _ = classify_sync(v, KR_PX * 1.02, US_PX * 1.08, 1,
+                                        DUST, TOL)
+        assert action == SyncAction.TRACK and side == 1
+
+    def test_quantity_mismatch_at_entry_repairs_despite_price_mask(
+            self) -> None:
+        # 0.9 KR @1100 = 990 vs 8.0 US @145 = 1160 at entry (15% off); the
+        # current prices happen to make them look equal — still broken.
+        v = PairView(kr_qty=0.9, us_qty=-8.0, pnl_usd=0.0,
+                     kr_entry=KR_PX, us_entry=US_PX)
+        action, _, detail = classify_sync(v, KR_PX, 123.75, 1, DUST, TOL)
+        assert action == SyncAction.REPAIR and "mismatch" in detail
+
     def test_any_size_healthy_pair_adopts(self) -> None:
         # Size is NOT a classification concern: resize (trim / keep) is
         # decided after adoption. 5x and 1/5x pairs both adopt.
@@ -183,8 +203,10 @@ class _ViewClient:
 class TestPositionView:
     def test_live_combines_unrealized_and_funding(self) -> None:
         rows = [
-            {"symbol": "KR", "positionAmt": "0.9", "unRealizedProfit": "-12.0"},
-            {"symbol": "US", "positionAmt": "-6.9", "unRealizedProfit": "4.0"},
+            {"symbol": "KR", "positionAmt": "0.9", "unRealizedProfit": "-12.0",
+             "entryPrice": "1100.5"},
+            {"symbol": "US", "positionAmt": "-6.9", "unRealizedProfit": "4.0",
+             "entryPrice": "144.9"},
             {"symbol": "OTHER", "positionAmt": "5", "unRealizedProfit": "99"},
         ]
         client = _ViewClient(rows, funding=3.0)
@@ -194,6 +216,8 @@ class TestPositionView:
         assert v.kr_qty == pytest.approx(0.9)
         assert v.us_qty == pytest.approx(-6.9)
         assert v.pnl_usd == pytest.approx(-12.0 + 4.0 + 6.0)  # raw USDT
+        assert v.kr_entry == pytest.approx(1100.5)
+        assert v.us_entry == pytest.approx(144.9)
         assert client.income_calls == ["KR", "US"]
 
     def test_live_flat_skips_income(self) -> None:
@@ -378,6 +402,10 @@ class _StubExec:
         self.open_calls = 0
         self.close_calls = 0
         self._close = PairExecution(close_ok, [], "" if close_ok else "boom")
+        self.view = PairView(kr_qty=0.0, us_qty=0.0, pnl_usd=0.0)
+
+    def position_view(self, entry_ts):  # type: ignore[no-untyped-def]
+        return self.view
 
     def open_ratio(self, side, kr, us):  # type: ignore[no-untyped-def]
         from twopair.executor import PairExecution
@@ -449,6 +477,41 @@ class TestLiveFaultInjection:
         decision = app._strategy.on_bar(sig2, 0.0, 0.0)
         app._handle_close(bar, sig2, decision)
         assert len(journal.trades) == 1
+
+
+class TestSyncRepairJournaling:
+    def _bar(self):  # type: ignore[no-untyped-def]
+        from twopair.signal import Bar
+        ts = dt.datetime.now(UTC).replace(second=0, microsecond=0)
+        return Bar(ts=ts, kr=1100.0, us=145.0, fx=1400.0)
+
+    def test_repair_of_open_position_records_trade(self) -> None:
+        app, execu, journal = _mk_app()
+        bar = self._bar()
+        app._strategy.adopt_position(1, bar.ts - dt.timedelta(hours=5),
+                                     0.0, "KR_open", 1000.0)
+        execu.view = PairView(kr_qty=0.9, us_qty=0.0, pnl_usd=-54.7)
+        assert app._sync_position(bar) is False       # repaired: no entry
+        assert execu.close_calls == 1
+        assert app._strategy.position is None
+        assert len(journal.trades) == 1
+        trade, _mode = journal.trades[0]
+        assert trade.reason.value == "repair"
+        assert trade.pnl_pct == pytest.approx(-5.47)
+        assert app._guard.daily_pnl_pct(bar.ts) == pytest.approx(-5.47)
+
+    def test_price_drift_keeps_position(self) -> None:
+        app, execu, journal = _mk_app()
+        bar = self._bar()
+        app._strategy.adopt_position(1, bar.ts - dt.timedelta(hours=5),
+                                     0.0, "KR_open", 1000.0)
+        execu.view = PairView(kr_qty=0.9, us_qty=-6.9, pnl_usd=-60.0,
+                              kr_entry=1100.0 / 1.02,
+                              us_entry=145.0 / 1.08)
+        assert app._sync_position(bar) is True
+        assert execu.close_calls == 0 and journal.trades == []
+        pos = app._strategy.position
+        assert pos is not None and pos.mtm_pct == pytest.approx(-6.0)
 
 
 def dataclasses_replace_sig(sig, **kw):  # type: ignore[no-untyped-def]

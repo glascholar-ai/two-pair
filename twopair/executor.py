@@ -61,6 +61,8 @@ class PairView:
     kr_qty: float   # signed position amount, KR leg
     us_qty: float   # signed position amount, US leg
     pnl_usd: float
+    kr_entry: float = 0.0   # average entry price, KR leg (0 = unknown)
+    us_entry: float = 0.0   # average entry price, US leg (0 = unknown)
 
 
 PAPI_BASE = "https://papi.binance.com"
@@ -668,11 +670,13 @@ class LiveExecutor:
         """
         rows = self._client.position_risk_all()
         qty = {self._kr: 0.0, self._us: 0.0}
+        entry = {self._kr: 0.0, self._us: 0.0}
         unreal = 0.0
         for row in rows:
             symbol = str(row.get("symbol", ""))
             if symbol in qty:
                 qty[symbol] = float(row.get("positionAmt") or 0.0)
+                entry[symbol] = float(row.get("entryPrice") or 0.0)
                 unreal += float(row.get("unRealizedProfit") or 0.0)
         funding = 0.0
         if entry_ts is not None and (qty[self._kr] != 0 or qty[self._us] != 0):
@@ -680,7 +684,8 @@ class LiveExecutor:
             for symbol in (self._kr, self._us):
                 funding += self._client.funding_income(symbol, start_ms)
         return PairView(kr_qty=qty[self._kr], us_qty=qty[self._us],
-                        pnl_usd=unreal + funding)
+                        pnl_usd=unreal + funding,
+                        kr_entry=entry[self._kr], us_entry=entry[self._us])
 
     def trim_to_notional(self, target_notional: float, kr_price: float,
                          us_price: float) -> List[LegFill]:

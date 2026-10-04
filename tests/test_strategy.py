@@ -208,3 +208,28 @@ class TestTrailingTakeProfit:
             cfg(trail_arm_pct=2.0)               # gap missing
         with pytest.raises(ValueError):
             cfg(trail_arm_pct=1.0, trail_gap_pct=1.5)  # gap >= arm
+
+
+class TestCloseExternal:
+    def test_records_trade_and_clears(self) -> None:
+        import datetime as _dt
+        from twopair.config import Config as _Cfg
+        from twopair.strategy import CloseReason as _CR, Strategy as _St
+        st = _St(_Cfg())
+        t0 = _dt.datetime(2026, 9, 21, tzinfo=_dt.timezone.utc)
+        st.adopt_position(1, t0, -1.0, "KR_open", 50000.0)
+        trade = st.close_external(t0 + _dt.timedelta(hours=10), -5.5,
+                                  _CR.REPAIR)
+        assert trade.reason is _CR.REPAIR and trade.pnl_pct == -5.5
+        assert trade.held_hours == 10.0
+        assert st.position is None and st.trades[-1] is trade
+
+    def test_requires_position(self) -> None:
+        import datetime as _dt
+        import pytest as _pt
+        from twopair.config import Config as _Cfg
+        from twopair.strategy import CloseReason as _CR, Strategy as _St
+        with _pt.raises(ValueError):
+            _St(_Cfg()).close_external(
+                _dt.datetime(2026, 9, 21, tzinfo=_dt.timezone.utc), 0.0,
+                _CR.REPAIR)

@@ -36,6 +36,7 @@ class CloseReason(enum.Enum):
     STOP = "stop"
     TAKE_PROFIT = "tp"
     TRAIL = "trail"
+    REPAIR = "repair"   # flattened by the sync repair path
 
 
 @dataclasses.dataclass
@@ -152,6 +153,26 @@ class Strategy:
         caller should journal an event instead.
         """
         self._pos = None
+
+    def close_external(self, ts: dt.datetime, pnl_pct: float,
+                       reason: CloseReason) -> Trade:
+        """Records a close executed outside on_bar (e.g. sync repair).
+
+        pnl_pct is the exchange-measured MTM at the moment of the flatten
+        (% of the position's leg notional); slippage of the flatten itself
+        is not included. Requires an open position.
+        """
+        pos = self._pos
+        if pos is None:
+            raise ValueError("close_external without an open position")
+        trade = Trade(entry_ts=pos.entry_ts, exit_ts=ts, side=pos.side,
+                      entry_z=pos.entry_z, max_abs_z=pos.max_abs_z,
+                      entry_seg=pos.entry_seg,
+                      held_hours=pos.held_hours(ts), pnl_pct=pnl_pct,
+                      max_mtm_pct=pos.max_mtm_pct, reason=reason)
+        self.trades.append(trade)
+        self._pos = None
+        return trade
 
     @property
     def need_rearm(self) -> bool:
