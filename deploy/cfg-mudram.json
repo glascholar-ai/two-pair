@@ -5,7 +5,7 @@
     "db_path": "data/journal-mudram.sqlite",
     "portfolio_margin": true,
     "digest_utc_hour": 1,
-    "max_chases": 10,
+    "max_chases": 30,
     "segmented_sd": false,
     "fx_source": "none",
     "win_mu": 2880,
